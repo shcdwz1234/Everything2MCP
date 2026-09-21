@@ -1,0 +1,10 @@
+{
+  "protocol": "s3",
+  "name": "minio",
+  "config": {
+    "bucket": "data",
+    "endpoint": "http://127.0.0.1:9000",
+    "unsigned": true,
+    "allowWrite": false
+  }
+}

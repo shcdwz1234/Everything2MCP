@@ -1,0 +1,17 @@
+{
+  "protocol": "opcua",
+  "name": "plant",
+  "config": {
+    "endpoint": "opc.tcp://127.0.0.1:4840",
+    "simulator": true,
+    "nodes": [
+      {
+        "nodeId": "ns=2;s=Temperature",
+        "displayName": "Temperature",
+        "nodeClass": "Variable",
+        "dataType": "Double",
+        "value": 21.5
+      }
+    ]
+  }
+}

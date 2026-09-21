@@ -1,0 +1,9 @@
+{
+  "protocol": "prometheus",
+  "name": "local",
+  "config": {
+    "url": "http://127.0.0.1:9090",
+    "timeoutMs": 2500,
+    "allowWrite": false
+  }
+}

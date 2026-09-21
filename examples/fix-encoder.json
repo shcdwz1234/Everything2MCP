@@ -1,0 +1,9 @@
+{
+  "protocol": "fix",
+  "name": "desk",
+  "config": {
+    "sender": "BUY",
+    "target": "EXCH",
+    "beginString": "FIX.4.2"
+  }
+}

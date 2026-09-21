@@ -1,0 +1,8 @@
+{
+  "protocol": "sqlite",
+  "name": "local",
+  "config": {
+    "filename": ":memory:",
+    "allowWrite": false
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "protocol": "duckdb",
+  "name": "olap",
+  "config": {
+    "simulator": true,
+    "allowWrite": false
+  }
+}

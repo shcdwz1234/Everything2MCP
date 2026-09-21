@@ -1,0 +1,11 @@
+{
+  "protocol": "smtp",
+  "name": "mail",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 587,
+    "from": "bot@example.com",
+    "starttls": true,
+    "allowWrite": false
+  }
+}

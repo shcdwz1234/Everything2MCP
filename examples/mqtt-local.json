@@ -1,0 +1,12 @@
+{
+  "protocol": "mqtt",
+  "name": "local",
+  "config": {
+    "url": "mqtt://127.0.0.1:1883",
+    "clientId": "everything2mcp-demo",
+    "topics": ["sensors/#", "commands/device1", "$share/workers/sensors/+"],
+    "auth": {
+      "type": "none"
+    }
+  }
+}

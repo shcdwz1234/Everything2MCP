@@ -1,0 +1,10 @@
+{
+  "protocol": "influx",
+  "name": "metrics",
+  "config": {
+    "bucket": "metrics",
+    "org": "local",
+    "url": "memory://",
+    "allowWrite": false
+  }
+}

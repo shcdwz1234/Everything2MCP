@@ -1,0 +1,33 @@
+{
+  "asyncapi": "2.6.0",
+  "info": {
+    "title": "Streetlights",
+    "version": "1.0.0"
+  },
+  "servers": {
+    "test": {
+      "url": "127.0.0.1:1883",
+      "protocol": "mqtt"
+    }
+  },
+  "channels": {
+    "smartlight/events/light/measured": {
+      "description": "Light measurement events",
+      "publish": {
+        "message": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "lumens": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "subscribe": {
+        "message": {
+          "payload": { "type": "object" }
+        }
+      }
+    }
+  }
+}

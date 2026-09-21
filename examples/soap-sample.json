@@ -1,0 +1,9 @@
+{
+  "protocol": "soap",
+  "name": "calculator",
+  "config": {
+    "wsdl": "./examples/calculator.wsdl",
+    "endpoint": "http://127.0.0.1:9/calculator",
+    "auth": { "type": "none" }
+  }
+}

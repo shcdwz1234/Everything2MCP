@@ -1,0 +1,14 @@
+{
+  "protocol": "modbus",
+  "name": "plc",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 502,
+    "unitId": 1,
+    "simulator": true,
+    "holding": [100, 0],
+    "input": [42],
+    "coils": [true],
+    "discrete": [false]
+  }
+}

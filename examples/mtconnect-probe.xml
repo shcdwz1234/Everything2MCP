@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MTConnectDevices xmlns="urn:mtconnect.org:MTConnectDevices:1.7">
+  <Header creationTime="2024-01-01T00:00:00Z" sender="e2mcp-fixture" instanceId="1" version="1.7"/>
+  <Devices>
+    <Device id="mill1" name="Mill" uuid="mill-1">
+      <Description>Hermetic MTConnect fixture</Description>
+      <DataItems>
+        <DataItem id="avail" name="avail" type="AVAILABILITY" category="EVENT"/>
+        <DataItem id="xact" name="Xact" type="POSITION" category="SAMPLE" units="MILLIMETER" subType="ACTUAL"/>
+      </DataItems>
+    </Device>
+  </Devices>
+</MTConnectDevices>

@@ -1,0 +1,10 @@
+{
+  "protocol": "mysql",
+  "name": "app",
+  "config": {
+    "url": "mysql://127.0.0.1:3306/app",
+    "simulator": true,
+    "allowWrite": false,
+    "note": "MariaDB uses the same protocol id mysql or alias mariadb"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "protocol": "grpc",
+  "name": "greeter",
+  "config": {
+    "proto": "./examples/greeter.proto",
+    "target": "127.0.0.1:50051",
+    "tls": false,
+    "auth": { "type": "none" }
+  }
+}

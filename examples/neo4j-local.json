@@ -1,0 +1,9 @@
+{
+  "protocol": "neo4j",
+  "name": "graph",
+  "config": {
+    "url": "bolt://127.0.0.1:7687",
+    "simulator": true,
+    "allowWrite": false
+  }
+}

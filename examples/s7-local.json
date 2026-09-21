@@ -1,0 +1,12 @@
+{
+  "protocol": "s7",
+  "name": "plc1",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 102,
+    "rack": 0,
+    "slot": 1,
+    "tcp": false,
+    "allowWrite": false
+  }
+}

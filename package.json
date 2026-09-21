@@ -1,0 +1,78 @@
+{
+  "name": "everything2mcp",
+  "version": "0.1.0",
+  "description": "Universal protocol→MCP bridge: register heterogeneous endpoints and call them as MCP tools.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "everything2mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "ui:build": "tsc -p ui/tsconfig.json && mkdir -p dist/ui && cp ui/index.html ui/styles.css dist/ui/",
+    "build": "tsc && mkdir -p dist/adapters/sparkplug dist/adapters/pulsar && cp src/adapters/sparkplug/sparkplug_b.proto dist/adapters/sparkplug/ && cp src/adapters/pulsar/PulsarApi.proto dist/adapters/pulsar/ && npm run ui:build",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "openapi",
+    "mqtt",
+    "soap",
+    "grpc",
+    "websocket",
+    "graphql",
+    "amqp",
+    "kafka",
+    "bridge",
+    "xmlrpc",
+    "jsonrpc",
+    "fix",
+    "redis",
+    "smtp",
+    "ldap",
+    "bacnet",
+    "sql",
+    "s3",
+    "prometheus",
+    "sqs",
+    "pulsar",
+    "gcs",
+    "oss",
+    "influx"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "amqplib": "^2.0.1",
+    "coap": "^1.6.0",
+    "fast-xml-parser": "^5.2.5",
+    "jsmodbus": "^5.0.0",
+    "kafkajs": "^2.2.4",
+    "ldapts": "^9.2.0",
+    "mqtt": "^5.14.1",
+    "nats": "^2.29.3",
+    "node-opcua": "^2.186.0",
+    "nodemailer": "^10.0.10",
+    "protobufjs": "^8.8.0",
+    "redis": "^6.2.1",
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.3",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/node": "^24.5.2",
+    "@types/nodemailer": "^8.0.2",
+    "@types/ssh2": "^1.15.6",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

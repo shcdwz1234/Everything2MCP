@@ -1,0 +1,9 @@
+{
+  "protocol": "s3",
+  "name": "bucket",
+  "config": {
+    "bucket": "artifacts",
+    "endpoint": "memory://",
+    "allowWrite": false
+  }
+}

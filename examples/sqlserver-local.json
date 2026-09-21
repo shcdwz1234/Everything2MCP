@@ -1,0 +1,9 @@
+{
+  "protocol": "sqlserver",
+  "name": "app",
+  "config": {
+    "url": "sqlserver://127.0.0.1:1433",
+    "simulator": true,
+    "allowWrite": false
+  }
+}

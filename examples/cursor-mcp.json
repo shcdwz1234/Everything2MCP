@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "everything2mcp": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "EVERYTHING2MCP_DATA_DIR": "data"
+      }
+    }
+  }
+}

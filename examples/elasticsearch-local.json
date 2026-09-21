@@ -1,0 +1,9 @@
+{
+  "protocol": "elasticsearch",
+  "name": "logs",
+  "config": {
+    "url": "http://127.0.0.1:9200",
+    "simulator": true,
+    "allowWrite": false
+  }
+}

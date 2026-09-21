@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MTConnectStreams xmlns="urn:mtconnect.org:MTConnectStreams:1.7">
+  <Header creationTime="2024-01-01T00:00:01Z" sender="e2mcp-fixture" instanceId="1" version="1.7" bufferSize="8" firstSequence="1" lastSequence="2" nextSequence="3"/>
+  <Streams>
+    <DeviceStream name="Mill" uuid="mill-1">
+      <ComponentStream component="Device" name="Mill" componentId="mill1">
+        <Events>
+          <Availability dataItemId="avail" name="avail" timestamp="2024-01-01T00:00:01Z" sequence="1">AVAILABLE</Availability>
+        </Events>
+        <Samples>
+          <Position dataItemId="xact" name="Xact" timestamp="2024-01-01T00:00:01Z" sequence="2">12.5</Position>
+        </Samples>
+      </ComponentStream>
+    </DeviceStream>
+  </Streams>
+</MTConnectStreams>

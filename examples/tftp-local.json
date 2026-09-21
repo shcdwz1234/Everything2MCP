@@ -1,0 +1,9 @@
+{
+  "protocol": "tftp",
+  "name": "boot",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 69,
+    "allowWrite": false
+  }
+}

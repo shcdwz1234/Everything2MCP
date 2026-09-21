@@ -1,0 +1,9 @@
+{
+  "protocol": "postgres",
+  "name": "app",
+  "config": {
+    "url": "postgres://127.0.0.1:5432/app",
+    "simulator": true,
+    "allowWrite": false
+  }
+}

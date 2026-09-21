@@ -1,0 +1,9 @@
+{
+  "protocol": "graphql",
+  "name": "api",
+  "config": {
+    "url": "http://127.0.0.1:4000/graphql",
+    "introspect": true,
+    "auth": { "type": "bearer", "token": "replace-me" }
+  }
+}

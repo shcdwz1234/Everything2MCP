@@ -1,0 +1,9 @@
+{
+  "protocol": "sqs",
+  "name": "orders",
+  "config": {
+    "queue": "orders",
+    "endpoint": "memory://",
+    "allowWrite": false
+  }
+}

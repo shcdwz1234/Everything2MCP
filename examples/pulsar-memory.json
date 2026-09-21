@@ -1,0 +1,12 @@
+{
+  "protocol": "pulsar",
+  "name": "events",
+  "config": {
+    "topic": "orders",
+    "tenant": "public",
+    "namespace": "default",
+    "subscription": "everything2mcp",
+    "serviceUrl": "memory://",
+    "allowWrite": false
+  }
+}

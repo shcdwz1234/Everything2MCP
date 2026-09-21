@@ -1,0 +1,8 @@
+{
+  "protocol": "nats",
+  "name": "core",
+  "config": {
+    "servers": ["nats://127.0.0.1:4222"],
+    "subjects": ["events", "commands"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "protocol": "mtconnect",
+  "name": "mill",
+  "config": {
+    "fixture": "./examples/mtconnect-probe.xml",
+    "currentFixture": "./examples/mtconnect-current.xml"
+  }
+}

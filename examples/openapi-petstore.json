@@ -1,0 +1,12 @@
+{
+  "protocol": "openapi",
+  "name": "widgets",
+  "config": {
+    "spec": "./examples/petstore.openapi.json",
+    "baseUrl": "https://example.invalid/api",
+    "auth": {
+      "type": "bearer",
+      "token": "replace-me"
+    }
+  }
+}

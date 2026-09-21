@@ -1,0 +1,16 @@
+{
+  "protocol": "ethernetip",
+  "name": "line1",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 44818,
+    "tcp": false,
+    "allowWrite": false,
+    "productName": "e2mcp-enip-sim",
+    "tags": [
+      { "name": "Heartbeat", "type": "DINT", "value": 1 },
+      { "name": "Running", "type": "BOOL", "value": true },
+      { "name": "Speed", "type": "REAL", "value": 12.5 }
+    ]
+  }
+}

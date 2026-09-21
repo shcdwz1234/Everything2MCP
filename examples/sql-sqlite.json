@@ -1,0 +1,9 @@
+{
+  "protocol": "sql",
+  "name": "local",
+  "config": {
+    "driver": "sqlite",
+    "filename": ":memory:",
+    "allowWrite": false
+  }
+}

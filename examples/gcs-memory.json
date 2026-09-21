@@ -1,0 +1,9 @@
+{
+  "protocol": "gcs",
+  "name": "bucket",
+  "config": {
+    "bucket": "artifacts",
+    "endpoint": "memory://",
+    "allowWrite": false
+  }
+}

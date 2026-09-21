@@ -1,0 +1,9 @@
+{
+  "protocol": "rabbitmq",
+  "name": "rmq-mgmt",
+  "config": {
+    "url": "http://127.0.0.1:15672",
+    "vhost": "/",
+    "allowWrite": false
+  }
+}

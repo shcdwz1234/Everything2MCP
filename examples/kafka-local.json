@@ -1,0 +1,11 @@
+{
+  "protocol": "kafka",
+  "name": "events",
+  "config": {
+    "brokers": ["127.0.0.1:9092"],
+    "clientId": "everything2mcp",
+    "topic": "orders",
+    "topics": ["orders"],
+    "groupId": "everything2mcp-demo"
+  }
+}

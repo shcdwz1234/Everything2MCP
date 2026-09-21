@@ -1,0 +1,8 @@
+{
+  "protocol": "jsonrpc",
+  "name": "api",
+  "config": {
+    "url": "http://127.0.0.1:8545",
+    "headers": {}
+  }
+}

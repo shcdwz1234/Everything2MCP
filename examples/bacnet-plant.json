@@ -1,0 +1,24 @@
+{
+  "protocol": "bacnet",
+  "name": "plant",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 47808,
+    "deviceId": 1001,
+    "allowWrite": false,
+    "devices": [
+      {
+        "deviceId": 1001,
+        "name": "ahu-1",
+        "objects": [
+          {
+            "objectType": "analog-input",
+            "objectInstance": 1,
+            "objectName": "ZoneTemp",
+            "presentValue": 22.4
+          }
+        ]
+      }
+    ]
+  }
+}
