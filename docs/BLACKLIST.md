@@ -4,13 +4,15 @@
 
 默认行为：**阻止新建与发现一键添加**；已经挂上的适配器实例**不会卸载**，但 `invoke` 也会被拒绝（更安全）。解除拉黑后可以再注册、再调用。
 
+**Full 模式仍执行黑名单**（`builtin-blacklist.bypassInFullControl=false`）。Agent `tools/list` / 默认 `mcp_list` 看不到已拉黑业务 tools；控制台可见。Agent 不能靠 `audience=console` 升级（[ADR 0002](adr/0002-actor-bound-audience.md)）。
+
 没有 CIDR / 网段扫描。黑名单按**单个** `protocol + host + port`（或规范化 url）精确匹配。
 
 ## 匹配规则
 
 1. **protocol** 走 `canonicalProtocol`（`pg` → `postgres`，`enip` → `ethernetip`，`http` → `openapi`，…）。
 2. **host** 小写；去掉 IPv6 方括号与尾随点。
-3. **port** 是数字。来源依次是：显式 `port`、URL 端口、`brokers[0]`、协议默认端口（MQTT 1883、Redis 6379、…）。
+3. **port** 是数字。来源依次是：显式 `port`、URL 端口、`brokers[0]`、协议默认端口（MQTT 1883、Redis 6379、Solr **8983**、RabbitMQ management **15672**、Kubernetes **6443**、Cassandra 9042、Whois 43、…；见 `src/catalog/blacklist.ts` `DEFAULT_PORT`）。Neo4j 默认端口在代码里是 **7687**（Bolt 惯例）；HTTP 适配器常用 **7474**，拉黑 HTTP 目标请写显式 port 或 url。
 4. 能抽出 `host` + `port` 时，匹配键是：
 
    ```

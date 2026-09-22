@@ -1,8 +1,8 @@
 # 发现（Discovery）
 
-目标：帮 Agent **自动找到并注册**「可以变成 MCP tools 的端点」，而不是替用户扫整个局域网。
+**当前快照：Phase U。** 目标：帮 Agent **自动找到并注册**「可以变成 MCP tools 的端点」，而不是替用户扫整个局域网。
 
-默认：**单主机、有超时、有 SSRF 防护、拒绝 CIDR/网段**。
+默认：**单主机、有超时、有 SSRF 防护、拒绝 CIDR/网段**。mDNS 组播浏览与 NFS 都不提供。
 
 ## 管理工具
 
@@ -90,6 +90,7 @@
 | 端口全扫 1–65535 | 不提供 |
 | mDNS 组播浏览 | **禁用**（会变成网段发现）。用 `mdnsUnicastQuery` 打单个 `host:5353` |
 | SSDP | **单主机 unicast M-SEARCH :1900**；`mdnsDiscover()` 仍 `E_UNSUPPORTED` |
+| NFS | **无适配器、无指纹**（有意不做） |
 
 `looksLikeNetworkRange()` 与 `assertHostAllowed()` 在管理入口和 `scanHost`/`probeHost` 都会跑。
 

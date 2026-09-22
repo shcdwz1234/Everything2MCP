@@ -1,5 +1,7 @@
 # TLS / 证书
 
+**当前快照：Phase K 起已落地 watch + gRPC remount；Phase U 未改 TLS 合同。**
+
 适配器在 **connect** 时读证书。`watchTlsMaterial` 对文件路径做 `fs.watch`，变更后 **热重读** 到内存（不重启进程）。删文件 / 读失败记 `lastError`（`E_INVALID_CONFIG`），可测。
 
 gRPC `tlsWatch: true` 在 PEM 文件变更后 **进程内 remount**：关掉现有 client / bidi session，用新 PEM 重建 `ChannelCredentials`，**不重启进程、不必 `mcp_update`**。正在飞的 RPC / 打开的 bidi session 会断。remount 失败（坏 PEM）时 health 记 `remount-failed`，那时才需要 **`mcp_update`**。

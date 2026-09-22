@@ -1,6 +1,8 @@
 # 安全架构
 
-S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。本文仍是实现合同；S3/S4（外部 JS/npm）未做。
+**当前快照：Phase U。** 下列锁定决策已经写进代码，文档不再把它们写成「建议 / 待决」。
+
+S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。Phase M 把 audience 绑到 actor。本文仍是实现合同；**S3/S4（外部 JS/npm）有意不做**（v1 builtins only）。不重开 CIDR UI / `ALLOW_SCAN` / shim / 全局写。
 
 原则：
 
@@ -228,7 +230,7 @@ export interface SecurityFile {
 | 锁定 id | 职责 | Full 下 |
 | --- | --- | --- |
 | `core-auth` | HTTP token 比对；stdio 视为本机信任但仍记 actor | 不可 bypass |
-| `core-audit` | 计数 + 环形/日后持久化事件 | 不可 bypass、不可静音 |
+| `core-audit` | 计数 + 进程内环形（截断 200）+ `dataDir/audit.jsonl` 追加持久化 | 不可 bypass、不可静音 |
 | `core-integrity` | `security.json` / `blacklist.json` / `registrations.json` 的 SHA-256 账本；有密钥时 HMAC-SHA256 + 账本 MAC | 不可 bypass；损坏则拒绝 restore / reload / discover / register / import / invoke / modeChange |
 
 `builtin-blacklist` **不是**上表锁定模块：控制台可以改条目。它也 **不是** Full-bypass 模块：评估永不因 mode=full 而跳过。
@@ -244,7 +246,7 @@ export interface SecurityFile {
 | 模块 id | Hooks | `bypassInFullControl` | locked | 现状映射 |
 | --- | --- | --- | --- | --- |
 | `core-auth` | auth | 否 | 是 | `EVERYTHING2MCP_HTTP_TOKEN` + Bearer / `x-api-key`；未配置 token 时开站（与今相同） |
-| `core-audit` | 全部（决策后记 `policy` / `mode_change`） | 否 | 是 | `src/runtime/metrics.ts` `invokeAudit` / `GET /api/audit`；进程内环形，**非**持久仓库 |
+| `core-audit` | 全部（决策后记 `policy` / `mode_change`） | 否 | 是 | `src/runtime/metrics.ts` `invokeAudit` + `dataDir/audit.jsonl` 追加（启动重载）；`GET /api/audit` / `#/audit`。进程内环形截断 200 条作即时视图；**账本不封 audit.jsonl**（有意） |
 | `core-integrity` | discover, register, import, invoke, modeChange + 启动 restore / reload | 否 | 是 | `IntegrityLedger`：默认 SHA-256（无密钥时首次见到封存）。`EVERYTHING2MCP_INTEGRITY_KEY` 或 `dataDir/.integrity-key` → HMAC-SHA256，账本带 `mac`；改目标或 `integrity.json` 都失败。监视 `security.json` / `blacklist.json` / `registrations.json` |
 | `allow-write` | invoke | **是**（仅平面层） | 否 | 平面 deny「`allowWrite` 不是 true」。Full 跳过**这一层**。适配器 `assertCanWrite` **仍闸**（L6） |
 | `builtin-blacklist` | discover, register, list, invoke | **否（L1）** | 否 | `BlacklistStore`、`assertNotBlacklisted`、`decorateCandidates`、`hideAgentTools`；`E_BLACKLISTED` |
@@ -329,7 +331,7 @@ Settings（`#/settings`）保持进程只读；安全页才是唯一改 mode 的
 
 S1 已完成 list 过滤。R4 已完成轻量文件哈希 + ALLOW_SCAN 硬禁用。S2 已完成上表。未完成 S3 时不执行外部 JS。不改黑名单匹配规则（除非测红）。
 
-**S2 之后仍欠：** v2/v3 外部模块只留钩子；MCP Agent 写操作 challenge（有意不做）。无密钥时 SHA-256 账本仍可双写伪造（已文档）。gRPC `tlsWatch` 已进程内 remount ChannelCredentials。
+**S2 之后仍欠（有意不做，不是漏实现）：** v2/v3 外部模块只留钩子；MCP Agent 写操作 challenge。无密钥时 SHA-256 账本仍可双写伪造（已文档）。gRPC `tlsWatch` 已进程内 remount ChannelCredentials。`tls-material` 热重读已落地。
 
 Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent 漏黑名单工具名；`jwt`/`tlsKey` 脱敏。审查纪要见 [PHASE_M_REVIEW.md](PHASE_M_REVIEW.md)。
 
@@ -343,13 +345,15 @@ Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent �
 | 完整性账本是否封 `audit.jsonl` | **否（有意不做）**。`INTEGRITY_WATCH` 仅 security / blacklist / registrations。审计是追加日志 |
 | `core-integrity` 算法 | 默认 SHA-256；有密钥则 HMAC-SHA256 + 账本 MAC |
 | `rate-limit` | Safe 生效；**可以** `bypassInFullControl`（Full 跳过） |
+| `tls-material` watch | **已做**：热重读 PEM；gRPC 进程内 remount；不是待决项 |
 
-### 仍待决
+### 仍待决（产品债，不是安全平面缺口）
 
-| 项 | 建议默认 |
+| 项 | 约定 |
 | --- | --- |
-| 外部模块 fail-closed | 加载失败当 deny；v1 碰非 builtin 源直接 `E_UNSUPPORTED` |
-| tls-material watch | **已做**热重读；活 ChannelCredentials 仍要 reconnect |
+| 外部模块 fail-closed | 加载失败当 deny；v1 碰非 builtin 源直接 `E_UNSUPPORTED`。**S3/S4 真加载有意不做** |
+| MCP Agent 写 challenge | **有意不做**。只有控制台 `confirm:true` |
+| `tls-material` watch | **已做**（不再待决）：热重读 PEM；gRPC `tlsWatch` 进程内 remount ChannelCredentials（打开的 bidi 会断）；remount 失败才要 `mcp_update`。见 [TLS.md](TLS.md) |
 
 ---
 
@@ -368,6 +372,8 @@ Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent �
 | CIDR | **不能**靠黑名单反选整段。发现仍是单主机；CIDR 永不放行（L5） |
 | 热加载 | 增删条目立即作用于后续 discover / register / list / invoke（L4） |
 | Hook | `discover`（标记 / 从 suggestions 拿掉）、`register`（`E_BLACKLISTED`）、`list`（隐藏 tools）、`invoke`（同码） |
-| 平面未落地前 | **不要改黑名单代码**，除非回归测红 |
+| 匹配规则 | 不要无故改（除非回归测红）。S1 已把 `assertNotBlacklisted` / `decorateCandidates` 收进模块 `evaluate`；`E_BLACKLISTED` 不变 |
 
 S1 包装时：`assertNotBlacklisted` 与 `decorateCandidates` 成为模块的 `evaluate`；并补 `list` 过滤。匹配规则与 `E_BLACKLISTED` 保持不变。
+
+**当前（Phase U）：** 安全平面合同仍是以上锁定决策。不重开 CIDR / `ALLOW_SCAN` / shim / 全局写 / Agent challenge / v2/v3 外部加载。

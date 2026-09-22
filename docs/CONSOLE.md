@@ -2,9 +2,11 @@
 
 同进程管理台：HTTP 监听器在 MCP `/mcp` + SSE `/sse` 之外挂载 **`/ui` SPA** 与 **`/api/*` REST**。业务仍走 `callManagementTool` / `ToolRegistry`，没有第二份 catalog。
 
+**当前快照：Phase U。** 协议矩阵随 `knownProtocols()` 列出 Solr / RabbitMQ management / Kubernetes 等。没有 CIDR 输入。
+
 ## 打开
 
-**最新启动（Phase H 收口后仍是这一条）：** 先构建再开 HTTP。
+先构建再开 HTTP（stdio 默认不提供 UI）：
 
 ```bash
 npm install
@@ -12,7 +14,7 @@ npm run build          # tsc + ui:build → dist/ui
 EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 ```
 
-浏览器打开 **http://127.0.0.1:8742/ui/**（`GET /` 会 302 到 `/ui/`）。能力清单见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+浏览器打开 **http://127.0.0.1:8742/ui/**（`GET /` 会 302 到 `/ui/`）。能力清单见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。Windows 同步树示例：`D:\Everything2MCP`。
 
 若设置了 `EVERYTHING2MCP_HTTP_TOKEN`，顶栏胶囊贴上同一 token（`Authorization: Bearer`）。`GET /health` 与静态 `/ui` 不鉴权；`/api/*` 与 MCP 共用 token。
 

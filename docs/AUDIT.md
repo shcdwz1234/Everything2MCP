@@ -1,5 +1,7 @@
 # 体检报告
 
+**当前状态：Phase U 已落地。下一阶段等用户 continue。** 下文各「本轮」小节是当时快照（历史「仍欠」里写的 Solr 等，若已在后续 Phase 勾完，以最新小节为准）。
+
 ## 本轮：Phase U（Solr / RabbitMQ management / Kubernetes 只读）
 
 **未再试** Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 真加载 / Agent 写 challenge。`allowWrite` 默认仍为 `false`。无 CIDR UI、无 shim。Full 仍执行黑名单。Full **不会**全局打开写。
@@ -43,6 +45,7 @@
 | Neo4j 完整 Bolt | HTTP transactional 可测；Bolt 需注入 |
 | SolrCloud admin / k8s watch / CRD | 子集 |
 | mDNS 组播浏览 | 有意不做 |
+| NFS | 有意不做（无适配器） |
 
 **不是债：** 无 CIDR UI；`ALLOW_SCAN` 死变量；默认 `allowWrite=false`；无 shim；transport 未改；Full 仍执行黑名单；Full ≠ 全局写。
 

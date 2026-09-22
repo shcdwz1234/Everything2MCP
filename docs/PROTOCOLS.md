@@ -1,12 +1,12 @@
 # 协议目录与优先级
 
-Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。状态分三档：
+**当前快照：Phase U。** Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。状态分三档：
 
 - **Implemented** — 可用，有真实客户端路径 + hermetic 测试
 - **Thin** — 已注册，`listTools`/`invoke` 可用；能力故意收窄（模拟器、编码器或有限操作），文档写明限制
-- **Planned leftover** — 尚未做适配器
+- **Planned leftover** — 尚未做适配器，或明确跳过（见文末）
 
-`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 已验收核心项；stdio 默认，HTTP/SSE 可选）。
+`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 核心项已验收；随后 Phase F–U 已落地。stdio 默认，HTTP/SSE 可选，控制台 `/ui`）。下一阶段等用户 continue。
 
 ## 总表（按面分组）
 
@@ -37,8 +37,6 @@ Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。状态分三�
 | CouchDB | `couchdb` | Thin | `list_dbs` `all_docs` `get` `put` | HTTP `_all_docs` / GET / PUT；写闸；无 `_changes` / 无附件 |
 | Whois | `whois` | Thin | `query` | TCP 43 只读；无写 |
 | Solr | `solr` | Thin | `list_cores` `select` `update` | HTTP select/update；写闸；不是 SolrCloud admin |
-| RabbitMQ management | `rabbitmq` | Thin | `list_queues` `list_exchanges` `publish` `get` | HTTP `/api/*`（15672）；**不是** AMQP 线协议（见 `amqp`） |
-| Kubernetes | `kubernetes`（`k8s`） | Thin | `list_*` `get_*` pods/services/configmaps | 只读；`exec`/`apply` 恒 `E_UNSUPPORTED` |
 | Qdrant | `qdrant` | Thin | `list_collections` `describe` `search` `upsert` | 向量库（**未做 ChromaDB**）；cosine simulator |
 | S3 / MinIO | `s3` | Implemented | `list` `get` `put` `delete` | memory / unsigned / **SigV4**；写入需 `allowWrite` |
 | GCS | `gcs` | Thin | 同上 | unsigned JSON 或 **Bearer token**；无完整 OAuth 刷新 |
@@ -62,6 +60,8 @@ Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。状态分三�
 | Sparkplug B | `sparkplug` | Implemented | encode/decode/parse + nbirth/ndeath/publish | 默认官方 protobuf；json-compat 为 fallback |
 | WebSocket | `websocket`（`ws`） | Implemented | send / receive_once | 无重连 |
 | AMQP / Kafka / NATS / SQS / Pulsar | `amqp` `kafka` `nats` `sqs` `pulsar` | Implemented / Thin | 见下 | NATS JetStream consumer/ack/interest 内存子集；AMQP get/ack/nack；SQS unsigned JSON；Pulsar 默认官方 PulsarApi 子集，`dialect: e2p1` 为旧方言 |
+| RabbitMQ management | `rabbitmq` | Thin | `list_queues` `list_exchanges` `publish` `get` | HTTP `/api/*`（**15672**）；**不是** AMQP 0-9-1（线协议仍 `amqp` :5672） |
+| Kubernetes | `kubernetes`（`k8s`） | Thin | list/get pods/services/configmaps | 只读；`exec`/`apply` 恒 `E_UNSUPPORTED`；无 watch / 无 CRD |
 | OPC-UA | `opcua` | Thin | read/write/browse/`subscribe_once`/`wait_data_change` | CI simulator；`subscribe_once` 一次性；`wait_data_change` 为内存 monitored-item |
 | Modbus / CoAP / FIX / BACnet | `modbus` `coap` `fix` `bacnet` | Thin / Implemented | 见下 | CoAP 有 Observe；FIX 内存 session；BACnet/IP unicast Who-Is |
 | EtherNet/IP | `ethernetip`（`enip`） | Thin | `list_identities` `list_tags` `read_tag` `write_tag` | CIP List Identity；本地 tag 表；无 Forward Open / Class 1 |
@@ -599,9 +599,23 @@ Tools 与 S3 相同：`list` `get` `put` `delete`。`unsigned: true` 走 GCS JSO
 
 `list_pods` / `get_pod` / `list_services` / `get_service` / `list_configmaps` / `get_configmap`。`exec` / `apply` **恒** `E_UNSUPPORTED`（不是写闸可开）。别名 `k8s`。无 watch / 无 CRD。
 
-## Planned leftover
+## Planned leftover / 有意跳过
 
-仍不做：Kafka cooperative rebalance / 真事务协调器（hermetic ≠ 集群）、SQL CI 镜像（本环境无 Docker）、LDAP GSSAPI、gRPC remount 失败后的自动 mcp_update、SMTP 同 socket 真 TLS 握手（广告/拒绝已测）、mDNS 组播浏览、Mongo aggregation、PromQL 真引擎、CalDAV 完整 iTIP、ZooKeeper ACL/SASL、Neo4j 完整 Bolt、OPC-UA 完整 Subscription 服务集。新协议按 `src/adapters/<id>/` 注册即可。
+**没有适配器、不要在文档里假装有客户端：**
+
+- **NFS**
+- mDNS **组播浏览**（单播 5353 已有）
+- Kafka cooperative rebalance / **真**事务协调器 / EOS（hermetic ≠ 集群）
+- SQL CI 真 Postgres/MySQL Docker 镜像（本环境无 Docker）
+- LDAP **GSSAPI**
+- 安全平面 **v2 本地 JS / v3 npm** 真加载
+- MCP **Agent 写 challenge**
+- Neo4j **完整 Bolt**（HTTP transactional 已有）
+- gRPC remount 失败后的自动 `mcp_update`
+- SMTP 同 socket 真 TLS 握手（广告/拒绝已测）
+- Mongo aggregation、PromQL 真引擎、CalDAV 完整 iTIP、ZooKeeper ACL/SASL、OPC-UA 完整 Subscription 服务集、SolrCloud admin、k8s watch/CRD/exec
+
+新协议按 `src/adapters/<id>/` 注册即可。下一阶段等用户 continue。
 
 ## 如何再加一种协议
 

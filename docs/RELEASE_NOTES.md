@@ -2,7 +2,7 @@
 
 从空仓库做到可跑的协议→MCP 桥 + 同进程 Web 控制台。默认 **stdio MCP**；HTTP 时同一进程挂 `/mcp`、`/sse`、`/ui`、`/api`。
 
-**本版测试基线：Phase U 全量绿 `110` suites / `477` tests**（Phase T 为 **106 / 467**）。
+**当前快照：Phase U 已落地。** 测试基线全量绿 **`110` suites / `477` tests**（Phase T 为 **106 / 467**）。下一阶段 **pending user continue**，不自动开新协议。本文件即变更记录（无单独 `CHANGELOG.md`）。
 
 ## 如何启动
 
@@ -95,7 +95,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 - `registrations.json` 纳入完整性账本
 - `dataDir/audit.jsonl` 追加写入，启动重载；`#/audit` 读持久化；密钥字段脱敏
 - `rate-limit` 滑窗（默认 60 invoke / 20 discover 每分钟）；Full 跳过
-- `secret-redact` 成为内置模块；`tls-material` 仅预留 register 钩子
+- `secret-redact` 成为内置模块；`tls-material` 当时仅预留 register 钩子（**文件 watch + gRPC remount 在 Phase J/K 落地**，见 [TLS.md](TLS.md)）
 
 ### Phase I（三大山诚实增量）
 
@@ -230,5 +230,8 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 - 默认网段 / CIDR 扫描、默认 `allowWrite=true`、`src/core` / `src/management` shim
 - Kafka 完整 rebalance / 真事务协调器 / EOS（需真集群）
 - SQL CI 真 Postgres/MySQL 镜像（本环境无 Docker）
+- LDAP GSSAPI；安全平面 v2/v3 外部模块真加载；MCP Agent 写 challenge
+- NFS 适配器；mDNS 组播浏览（单播 5353 已有）
 - Sparkplug 完整 Host（自动 rebirth 循环 / 全量 NCMD）
+- Neo4j 完整 Bolt；k8s exec/apply/watch；SolrCloud admin
 - ChromaDB

@@ -1,9 +1,11 @@
 # Roadmap — 按阶段顺序推进
 
-产品目标：把尽可能多的协议变成 MCP tools，并让 Agent **自动发现、建议、一键注册**。  
-约束（全程有效）：**默认禁止网段 / CIDR 扫描**；**SSRF 拦截云 metadata / link-local**；数据面 **默认 `allowWrite=false`（只读）**。
+**当前状态：Phase U 已落地并勾完。下一阶段等用户明确 continue，不自动开新协议 / 不重开安全决策。**
 
-本文件是唯一执行顺序。未完成上一阶段验收项时，**不跳阶段、不堆无关协议**。测试与功能并行：每个引擎至少 `config validation` + `success` + `failure`（含 `allowWrite=false`）。
+产品目标：把尽可能多的协议变成 MCP tools，并让 Agent **自动发现、建议、一键注册**。  
+约束（全程有效）：**默认禁止网段 / CIDR 扫描**；**SSRF 拦截云 metadata / link-local**；数据面 **默认 `allowWrite=false`（只读）**；**Full 仍执行黑名单**；**Full ≠ 全局写**；无 shim；transport 合同不变。
+
+P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）。未完成上一阶段验收项时，**不跳阶段、不堆无关协议**。测试与功能并行：每个引擎至少 `config validation` + `success` + `failure`（含 `allowWrite=false`）。当前测试基线见 [RELEASE_NOTES.md](RELEASE_NOTES.md) / [AUDIT.md](AUDIT.md)（Phase U：**110 suites / 477 tests**）。
 
 ---
 
@@ -173,15 +175,15 @@
 
 仍是大山：真 SQL CI 镜像、Kafka JoinGroup / 真事务协调器、分区 metadata / batch。
 
-## Phase H — 过夜收口（不再开新大山）
+## Phase H — 过夜收口（历史；已完成，其后由用户批准开了 I–U）
 
 - [x] `docs/RELEASE_NOTES.md`：MVP → W1–W3 → F/G/H
 - [x] AUDIT 已完成 / 仍开放优先级
 - [x] README / CONSOLE 启动句对齐
-- [x] Sparkplug Host STATE 只读订阅 stub（`host_state`；不是 Host Application）
+- [x] Sparkplug Host STATE 只读订阅 stub（`host_state`；当时不是 Host Application；Host MVP 在 Phase J）
 - [x] 全量 `npm run build && npm test` 绿
 
-**停在这里。不自动开 Phase I。**（用户过夜明确批准后才开。）
+当时停在 H、不自动开 I。用户批准后已继续到 **Phase U**。不要把本段读成当前停点。
 
 ## Phase I — 三大山诚实增量（不是完整产品）
 
@@ -308,6 +310,10 @@
 - [x] 指纹 8983 / 15672 / 6443 + plan_bridge `allowWrite=false`；控制台矩阵对齐
 - [x] 未再试 Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 / Agent challenge / NFS / mDNS 组播
 
+## 当前停点
+
+**Phase U 已落地。** 下一阶段 **pending user continue**。不要自动开 Phase V / 不要重开 CIDR、`ALLOW_SCAN`、shim、全局写、Agent challenge、v2/v3 外部插件。
+
 ## 明确不会做
 
 - 默认网段 / 全端口扫描
@@ -315,3 +321,10 @@
 - 重新引入 `src/core` / `src/management`
 - ChromaDB
 - 控制台 CIDR 扫描 UI / 默认 `allowWrite=true` / shim
+- Kafka **真** EOS / cooperative rebalance（需集群）
+- SQL CI Docker 真库（本环境无 Docker）
+- LDAP GSSAPI
+- v2 本地 JS / v3 npm 外部安全模块真加载
+- MCP Agent 写 challenge
+- NFS 适配器
+- mDNS 组播浏览（单播 5353 已有）

@@ -1,6 +1,6 @@
 # 架构 — Everything2MCP
 
-单进程、五包分层。业务 tools 全部由适配器在运行时注册，MCP 工具名保持 `mcp_*` / `discovery_probe` 与 `{protocol}.{name}.{operation}`。
+**当前快照：Phase U 已落地。** 单进程、五包分层。业务 tools 全部由适配器在运行时注册，MCP 工具名保持 `mcp_*` / `discovery_*` / `schema_import` 与 `{protocol}.{name}.{operation}`。下一阶段等用户 continue。
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -15,8 +15,8 @@
 └──────────────────────┬───────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────┐
-│ control     mcp_add/list/update/remove/query  │
-│             discovery_probe · policy hooks    │
+│ control     mcp_* · discovery_* · schema_import│
+│             policy / security plane · REST     │
 └───────────┬──────────────────────┬───────────┘
             │                      │
             ▼                      ▼
@@ -44,7 +44,7 @@
 
 ```
 transport  →  control  →  catalog
-control    →  discovery     （probe / 日后的 suggest、add_from_discovery）
+control    →  discovery     （probe / scan / suggest / add_from_discovery / schema_import）
 catalog    →  runtime/bootstrap  →  adapters   （工厂注册，不直接 import adapters/index 以外的实现）
 adapters   →  runtime 叶子模块（types / errors / auth / load）
 ```
@@ -69,15 +69,15 @@ adapters   →  runtime 叶子模块（types / errors / auth / load）
 
 ## 2. control
 
-管理 MCP 工具名不变：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`discovery_probe`。
+管理 MCP 工具（已全部挂上，不是 stub）：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`mcp_blacklist_*`、`schema_import`、`discovery_probe`、`discovery_scan_host`、`discovery_suggest`。
 
 - `server.ts`：ListTools / CallTool、`tools.listChanged`
-- `tools.ts`：管理工具 schema 与实现
+- `tools.ts`：管理工具 schema 与实现；`mcp_list` 的 `audience=console` **仅**当 actor 是 console 时生效（防 Agent 伪造，ADR 0002）
 - `layers.ts`：`_meta.layer` = management | business；`mcp_list { layer }`
 - `policy.ts`：网段扫描拒绝；预留注册 allowlist hook（今日 no-op，闸在黑名单 + SSRF）
+- `security/`：Policy Gateway（Safe/Full、内置模块、HMAC 完整性）；v1 只加载 builtins
 - `rest.ts`：控制台 REST，复用 `callManagementTool`（入口强制 `actor.kind=console`）
 - `redact.ts`：REST 响应密钥脱敏（含 `jwt` / `tlsKey`）
-- `tools.ts`：`mcp_list` 的 `audience=console` **仅**当 actor 是 console 时生效（防 Agent 伪造）
 
 Agent 黄金路径（P5）：`mcp_plan_bridge` → `discovery_scan_host` → `mcp_add_from_discovery` / `schema_import` → `mcp_health` / `mcp_explain_tool`。证明：`tests/p5-golden-path.test.ts`。
 
@@ -93,10 +93,11 @@ Agent 黄金路径（P5）：`mcp_plan_bridge` → `discovery_scan_host` → `mc
 ## 4. discovery
 
 - `probe.ts`：单主机 OpenAPI / SOAP / GraphQL 短超时探测；网段默认拒绝
-- `suggest.ts`：把 candidate 映射成 `mcp_add` 形状（尚未挂成 MCP 工具）
-- `import.ts`：`schema_import` 解析 OpenAPI / WSDL / proto / GraphQL，可随后走同一 `mcp_add` 闸
+- `scan` / 指纹：单主机并行探测（端口表见 `docs/DISCOVERY.md`，含 Phase U：Solr 8983、RabbitMQ management 15672、Kubernetes 6443）
+- `suggest.ts`：把 candidate 映射成 `mcp_add` 形状；已挂成 MCP 工具 `discovery_suggest`
+- `import.ts`：`schema_import` 解析 OpenAPI / WSDL / proto / GraphQL SDL / AsyncAPI，可随后走同一 `mcp_add` 闸
 
-mDNS **组播浏览**仍禁用。SSDP 是对单主机 **unicast M-SEARCH :1900**（不是 `239.255.255.250`）。不扫描 CIDR。`allowRegistration` 仍是预留 no-op。
+mDNS **组播浏览**仍禁用（单播 `host:5353` 已有）。SSDP 是对单主机 **unicast M-SEARCH :1900**（不是 `239.255.255.250`）。不扫描 CIDR。`allowRegistration` 仍是预留 no-op。NFS 无适配器。
 
 ## 5. runtime + adapters
 
@@ -138,13 +139,13 @@ interface ProtocolAdapter {
 
 协议实现目录保持扁平：`src/adapters/<protocol>/`。`src/adapters/packs.ts` 只做分组 overlay：
 
-| Pack | protocols |
+| Pack | protocols（`src/adapters/packs.ts` overlay，实现仍扁平） |
 | --- | --- |
-| http | openapi, http, graphql, soap |
+| http | openapi, http, graphql, soap, webdav, caldav, carddav |
 | rpc | grpc, xmlrpc, jsonrpc |
-| messaging | mqtt, amqp, kafka, nats, websocket, ws, asyncapi, sparkplug, sqs, pulsar, rabbitmq (management HTTP) |
-| industrial | opcua, modbus, coap, fix, bacnet, ethernetip, s7, mtconnect |
-| data | sqlite, postgres, mysql, s3, gcs, oss, influx, prometheus, redis, smtp, ldap, dns, cassandra, couchdb, whois, solr, kubernetes |
+| messaging | mqtt, amqp, kafka, nats, websocket, ws, asyncapi, sparkplug, sqs, pulsar, imap, pop3, **rabbitmq（management HTTP，不是 AMQP）** |
+| industrial | opcua, modbus, coap, fix, bacnet, ethernetip, s7, mtconnect, snmp |
+| data | sqlite/postgres/mysql/…、mongodb、redis、elasticsearch/opensearch、clickhouse、neo4j、qdrant、s3/gcs/oss、influx、prometheus、smtp、ldap、ftp、etcd、consul、azureblob、sftp、memcached、tftp、beanstalkd、zookeeper、dns、cassandra、couchdb、whois、**solr**、**kubernetes / k8s** |
 
 新增协议 = 实现 SPI + 一行 `registerAdapterFactory`。不要改 server 的业务 tool 列表。
 
@@ -167,7 +168,13 @@ interface ProtocolAdapter {
 
 ## 非目标
 
-- 多租户、完整 OAuth（同进程 `/ui` 控制台已做；无独立 GUI 进程）
-- 主动全网扫描
-- 本轮不引入 AsyncAPI / Sparkplug / 新 autonomy 工具
-- 为每个协议都做完整实现（见 `PROTOCOLS.md`）
+这些是产品硬约束或有意不做，不是「还没写到」：
+
+- 多租户、完整 OAuth、密钥保险箱（同进程 `/ui` 控制台已做；无独立 GUI 进程）
+- 主动全网扫描 / CIDR UI / 复活 `ALLOW_SCAN`
+- 为每个协议都做完整实现（见 `PROTOCOLS.md` Implemented vs Thin）
+- Kafka 真 EOS / cooperative rebalance、SQL CI Docker 真库、LDAP GSSAPI
+- v2/v3 外部安全插件加载、Agent 写 challenge、NFS、mDNS 组播浏览
+- 重新引入 `src/core` / `src/management` shim
+
+AsyncAPI、Sparkplug、`mcp_plan_bridge` / `discovery_suggest` / `mcp_add_from_discovery` **已经落地**（早期 ADR 里「推迟」是历史，见 `docs/adr/0001-five-package-layout.md`）。

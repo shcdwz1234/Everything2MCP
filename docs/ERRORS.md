@@ -1,5 +1,7 @@
 # Error codes
 
+Adapter and management tools return a stable JSON payload when a call fails. **Current snapshot: Phase U** (no new error codes; `E_BLACKLISTED` / `E_UNSUPPORTED` still cover skip/deny paths).
+
 Adapter and management tools return a stable JSON payload when a call fails:
 
 ```json
@@ -36,4 +38,9 @@ Each adapter `invoke` (via `invokeWithMiddleware`) increments process-wide succe
 
 `mcp_health` includes `invokeAudit: { success, fail }` plus the configured transport kind/host/port.
 
-控制台 `GET /api/audit` 返回同一计数，外加进程内环形事件（tool / protocol / adapterId / code）。`GET /api/errors` 列出全部 `ERROR_CODES` 与 `ERROR_CODE_HELP`。
+控制台 `GET /api/audit` 返回同一计数，外加：
+
+- 进程内环形事件（tool / protocol / adapterId / code；约 200 条截断，即时视图）
+- **`dataDir/audit.jsonl` 追加持久化**（启动重载；`#/audit` 读这个）。完整性账本**不封** `audit.jsonl`（有意；见 [SECURITY_ARCHITECTURE.md](SECURITY_ARCHITECTURE.md)）
+
+事件里的 token/password 走 `redactSecrets`。`GET /api/errors` 列出全部 `ERROR_CODES` 与 `ERROR_CODE_HELP`。
