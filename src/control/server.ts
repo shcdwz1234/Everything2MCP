@@ -15,9 +15,12 @@ import { APP_NAME, APP_VERSION, type AppConfig, type AppConfigOverrides } from "
 import { callManagementTool, MANAGEMENT_TOOL_NAMES, managementToolSchemas } from "./tools.js";
 import { SecurityPlane } from "./security/index.js";
 import { defaultActor } from "./security/types.js";
+import { pickupDrops } from "./partner.js";
+import { defaultDropsDir } from "../discovery/compat.js";
+import { join } from "node:path";
 
 const SERVER_INSTRUCTIONS =
-  "Everything2MCP is a protocol→MCP bridge. Prefer mcp_plan_bridge → discovery_scan_host → mcp_add_from_discovery (or schema_import) → mcp_health / mcp_explain_tool. tools/list has two layers: _meta.layer=management (mcp_*, discovery_*, schema_import) and business (protocol.name.operation). Use mcp_list { layer: \"business\" } to avoid flooding. Writes default allowWrite=false. Never scan CIDR/network ranges.";
+  "Everything2MCP is a protocol→MCP bridge. Agent-facing northbound is MCP only. Southbound priority: (1) E2MCP Partner protocol (apps do not speak MCP) (2) native OpenAPI adapters (3) mcp_bridge 兜底. Deploy is a minimal MCP core — capabilities are hot-added, not bulk-registered at boot. Prefer environment_inventory / compat_scan / partner_list → capability_register. Writes default allowWrite=false. Never scan CIDR. Scan never opens write/desktop/secrets.";
 
 export interface Everything2Mcp {
   server: Server;
@@ -62,6 +65,18 @@ export async function createEverything2McpServer(
   });
   await registry.restore();
   await security.restore();
+
+  const mgmt = { registry, config, blacklist, security, auditLog };
+  for (const dir of dropsDirsFor(config.dataDir)) {
+    try {
+      const picked = await pickupDrops(mgmt, dir);
+      if (picked.picked.length || picked.errors.length) {
+        log("partner drops pickup", picked);
+      }
+    } catch (err) {
+      log("partner drops pickup failed", { dir, error: String(err) });
+    }
+  }
 
   const liveServers = new Set<Server>();
   const closingServers = new WeakSet<Server>();
@@ -200,4 +215,13 @@ function stringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function dropsDirsFor(dataDir: string): string[] {
+  const dirs = [join(dataDir, "drops")];
+  if (process.env.EVERYTHING2MCP_DROPS_DIR?.trim()) dirs.push(process.env.EVERYTHING2MCP_DROPS_DIR.trim());
+  else if (!process.env.NODE_TEST_CONTEXT && process.env.EVERYTHING2MCP_DROPS_HOME !== "0") {
+    dirs.push(defaultDropsDir());
+  }
+  return [...new Set(dirs)];
 }

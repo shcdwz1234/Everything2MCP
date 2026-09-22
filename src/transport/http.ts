@@ -96,6 +96,19 @@ function extractToken(req: IncomingMessage, extraHeader?: string): string | unde
   return undefined;
 }
 
+function flattenHeaders(req: IncomingMessage): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (typeof v === "string") out[k] = v;
+    else if (Array.isArray(v) && v[0]) out[k] = v[0];
+  }
+  return out;
+}
+
+function isPartnerAppPath(pathname: string): boolean {
+  return /^\/api\/partner\/v1\/(register|unregister|heartbeat|invoke|schema)$/.test(pathname);
+}
+
 function rejectUnauthorized(res: ServerResponse): void {
   res.writeHead(401, {
     "Content-Type": "application/json",
@@ -113,7 +126,7 @@ function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key, mcp-session-id, mcp-protocol-version",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key, x-partner-token, mcp-session-id, mcp-protocol-version",
     "Access-Control-Expose-Headers": "mcp-session-id, mcp-protocol-version",
   };
 }
@@ -188,7 +201,7 @@ export async function listenMcpHttp(app: Everything2Mcp, options?: HttpTransport
       const uiRoot = resolveUiRoot();
       if (tryServeUi(req, res, pathname, uiRoot)) return;
 
-      if (token) {
+      if (token && !isPartnerAppPath(pathname)) {
         const provided = extractToken(req, tokenHeader);
         if (!provided || !tokensEqual(provided, token)) {
           rejectUnauthorized(res);
@@ -213,6 +226,7 @@ export async function listenMcpHttp(app: Everything2Mcp, options?: HttpTransport
           pathname,
           query: url.searchParams,
           body: parsed,
+          headers: flattenHeaders(req),
         });
         writeJson(res, result.status, result.body);
         return;

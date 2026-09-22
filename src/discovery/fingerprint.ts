@@ -1191,3 +1191,55 @@ export async function fingerprintNeo4jHttp(
   });
 }
 
+export async function fingerprintVault(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  get: typeof httpGet = httpGet,
+): Promise<DiscoveryCandidate | undefined> {
+  const origin = `http://${host}:${port}`;
+  const res = await get(`${origin}/v1/sys/health`, timeoutMs);
+  if (!res || !/"initialized"|"sealed"|vault/i.test(res.body)) return undefined;
+  return candidate("vault", origin, "mcp_add protocol=vault config.url=<url> (no token in suggest)", {
+    status: res.status,
+    title: "Vault / OpenBao",
+    confidence: port === 8200 ? 0.92 : 0.7,
+    config: { url: origin, allowWrite: false, allowReadSecrets: false },
+  });
+}
+
+export async function fingerprintAlertmanager(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  get: typeof httpGet = httpGet,
+): Promise<DiscoveryCandidate | undefined> {
+  const origin = `http://${host}:${port}`;
+  const res = await get(`${origin}/api/v2/status`, timeoutMs);
+  if (!res || !/cluster|versionInfo|alertmanager/i.test(res.body)) return undefined;
+  return candidate("alertmanager", origin, "mcp_add protocol=alertmanager config.url=<url> config.allowWrite=false", {
+    status: res.status,
+    title: "Prometheus Alertmanager",
+    confidence: port === 9093 ? 0.92 : 0.7,
+    config: { url: origin, allowWrite: false },
+  });
+}
+
+export async function fingerprintDockerEngine(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  get: typeof httpGet = httpGet,
+): Promise<DiscoveryCandidate | undefined> {
+  const origin = `http://${host}:${port}`;
+  const res = await get(`${origin}/version`, timeoutMs);
+  if (!res || !/ApiVersion|Components|platform/i.test(res.body)) return undefined;
+  return candidate("docker", origin, "mcp_add protocol=docker config.url=<url> config.allowWrite=false", {
+    status: res.status,
+    title: "Docker/Podman Engine API",
+    confidence: port === 2375 ? 0.9 : 0.65,
+    config: { url: origin, allowWrite: false },
+  });
+}
+
+

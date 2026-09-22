@@ -1,8 +1,8 @@
 # 发现（Discovery）
 
-**当前快照：Phase U。** 目标：帮 Agent **自动找到并注册**「可以变成 MCP tools 的端点」，而不是替用户扫整个局域网。
+**当前快照：Phase X。** Environment Plane 是按需盘点。另见 `compat_scan`（[COMPAT.md](COMPAT.md)）与 Partner drops（[PARTNER.md](PARTNER.md)）。NFS 只有诚实 NULL ping。discovery **仍不**做组播。
 
-默认：**单主机、有超时、有 SSRF 防护、拒绝 CIDR/网段**。mDNS 组播浏览与 NFS 都不提供。
+默认：**单主机、有超时、有 SSRF 防护、拒绝 CIDR/网段**。mDNS 组播浏览不提供。NFS 组播/SHOWMOUNT 不提供。
 
 ## 管理工具
 
@@ -11,8 +11,13 @@
 | `discovery_probe` | 单 host+port 的 OpenAPI / WSDL / GraphQL 路径探测（兼容旧行为） |
 | `discovery_scan_host` | 并行探测更多协议（见下） |
 | `discovery_suggest` | 把候选变成 `mcp_add` 草案（protocol + name + config + confidence） |
-| `mcp_add_from_discovery` | 一键按草案注册 |
+| `mcp_add_from_discovery` | 一键按草案注册（与 `capability_register` 同一 `add()`） |
 | `schema_import` | 从文件/URL 导入 OpenAPI、WSDL、proto、GraphQL SDL、AsyncAPI；识别 JSON:API/OData/tRPC/Connect 为 import-first |
+| `environment_inventory` | 本机 OS/端口/运行时/容器/**云线索** → suggest + `compat` 块；从不 auto-register |
+| `compat_scan` | Compat Catalog 分档建议（ingress）；P3 mcpServers 仅为 mcp_bridge 兜底 |
+| `partner_list` | 列出 ingress=partner 的连接 |
+| `capability_register` | 热加载（confirm 或 Safe+readonly auto；Partner write/desktop 不能 auto） |
+| `capability_unregister` | 热卸载（与 `mcp_remove` 同一 `remove()`；不要求 allowWrite） |
 
 关掉发现：`EVERYTHING2MCP_DISCOVERY_ENABLED=false`（`mcp_plan_bridge` / `schema_import` / `mcp_health` 仍可用）。
 
@@ -22,7 +27,7 @@
 { "host": "127.0.0.1", "port": 8080, "protocols": ["openapi", "redis", "mqtt"] }
 ```
 
-未指定 `port` 时，HTTP 走 80/8080/8000 与 443；其它协议走常见端口（6379 Redis、1883 MQTT、502 Modbus、5683 CoAP、4222 NATS、50051 gRPC、**9092 Kafka**、**5672 AMQP**、**4840 OPC-UA**、47808 BACnet/IP、**44818 EtherNet/IP**、**102 S7**、**5000 MTConnect**、**6650/8080 Pulsar**、**4443 GCS**、**8086 Influx**、**25/587 SMTP**、**21 FTP**、**22 SFTP/SSH-2**、**69 TFTP**、**11211 Memcached**、**161 SNMP**、**2379 etcd**、**143 IMAP**、**110 POP3**、**8500 Consul**、**10000 Azure Blob / Azurite**、**1900 SSDP 单播**、**5353 DNS-SD 单播**、**53 DNS 单播**、**5232 CalDAV/CardDAV**、**11300 Beanstalkd**、**2181 ZooKeeper**、**9042 Cassandra**、**5984 CouchDB**、**43 Whois**、**7474 Neo4j HTTP**、**8983 Solr**、**15672 RabbitMQ management**、**6443 Kubernetes**）。`onlyGivenPort: true` 时只打给出的端口。
+未指定 `port` 时，HTTP 走 80/8080/8000 与 443；其它协议走常见端口（6379 Redis、1883 MQTT、502 Modbus、5683 CoAP、4222 NATS、50051 gRPC、**9092 Kafka**、**5672 AMQP**、**4840 OPC-UA**、47808 BACnet/IP、**44818 EtherNet/IP**、**102 S7**、**5000 MTConnect**、**6650/8080 Pulsar**、**4443 GCS**、**8086 Influx**、**25/587 SMTP**、**21 FTP**、**22 SFTP/SSH-2**、**69 TFTP**、**11211 Memcached**、**161 SNMP**、**2379 etcd**、**143 IMAP**、**110 POP3**、**8500 Consul**、**10000 Azure Blob / Azurite**、**1900 SSDP 单播**、**5353 DNS-SD 单播**、**53 DNS 单播**、**5232 CalDAV/CardDAV**、**11300 Beanstalkd**、**2181 ZooKeeper**、**9042 Cassandra**、**5984 CouchDB**、**43 Whois**、**7474 Neo4j HTTP**、**8983 Solr**、**15672 RabbitMQ management**、**6443 Kubernetes**、**8200 Vault**、**9093 Alertmanager**、**2375 Docker Engine**）。`onlyGivenPort: true` 时只打给出的端口。
 
 并行指纹：
 
@@ -77,6 +82,9 @@
 | Solr | HTTP **8983** `/solr/admin/info/system` 认 `solr_spec_version` / lucene |
 | RabbitMQ management | HTTP **15672** `/api/overview` 认 `rabbitmq_version`（不是 AMQP 5672） |
 | Kubernetes | HTTP **6443** `/version` 认 `gitVersion` / `major` |
+| Vault / OpenBao | HTTP **8200** `/v1/sys/health` 认 `initialized`/`sealed`（无 token） |
+| Alertmanager | HTTP **9093** `/api/v2/status` |
+| Docker Engine | HTTP **2375** `/version` 认 `ApiVersion` |
 
 每条探测都有 `timeoutMs`（默认 `EVERYTHING2MCP_DISCOVERY_TIMEOUT_MS=2500`）。
 
@@ -90,7 +98,7 @@
 | 端口全扫 1–65535 | 不提供 |
 | mDNS 组播浏览 | **禁用**（会变成网段发现）。用 `mdnsUnicastQuery` 打单个 `host:5353` |
 | SSDP | **单主机 unicast M-SEARCH :1900**；`mdnsDiscover()` 仍 `E_UNSUPPORTED` |
-| NFS | **无适配器、无指纹**（有意不做） |
+| NFS | **无 SHOWMOUNT / 无组播指纹**。适配器 live 仅 NFSv3 NULL ping（需热加载，不是 scan 默认） |
 
 `looksLikeNetworkRange()` 与 `assertHostAllowed()` 在管理入口和 `scanHost`/`probeHost` 都会跑。
 
@@ -124,8 +132,8 @@ MCP `tools/list` 会列出两层，用 `_meta.layer` 区分：
 
 | layer | 谁 | 例子 |
 | --- | --- | --- |
-| `management` | 目录 / 发现 | `mcp_plan_bridge` `discovery_scan_host` `schema_import` |
-| `business` | 已注册适配器 | `openapi.widgets.listWidgets` |
+| `management` | 目录 / 发现 / 热加载 | `mcp_plan_bridge` `discovery_scan_host` `environment_inventory` `capability_register` `schema_import` |
+| `business` | 已注册适配器 | `openapi.widgets.listWidgets` `os_info.local.uname` |
 
 `mcp_list` 默认 `layer=business`（只返回业务 tools + 管理工具**名称**列表）。`layer=management` / `all` 可显式展开。`mcp_explain_tool` 的 `layer` 字段与此一致。
 
@@ -153,3 +161,24 @@ MCP `tools/list` 会列出两层，用 `_meta.layer` 区分：
 4. `mcp_health` / `mcp_explain_tool` 确认
 
 认证探测不在范围内：需要 header 才能 GET `/openapi.json` 时，直接把已知 URL 交给 `schema_import` 或 `mcp_add`。
+
+本机环境（不是远端 host）走 **Environment Plane**：`environment_inventory` → 建议列表 → `capability_register`（confirm，或 Safe+只读 `auto:true`）。热卸载走 `capability_unregister`。控制台同一条路：`#/capabilities`。
+
+## Environment inventory（按需，不是 deploy hook）
+
+`environment_inventory` 盘点当前进程所在机器，**只产出 suggest**（`autoRegistered` 恒为空数组）。从不在 boot 调用，从不把 `allowWrite` / `allowShell` / `allowDesktop` / `allowReadSecrets` 设为 `true`。**从不请求 IMDS（169.254.169.254）**。
+
+返回字段（诚实缺口写在 `gaps[]`，不假装跨平台 API 都成功）：
+
+| 字段 | 内容 |
+| --- | --- |
+| `os` | platform / arch / distro 线索（Linux `/etc/os-release`） |
+| `permissions` | uid/gid/username；elevated hint（uid 0 / Windows 管理员线索） |
+| `listeningPorts` | Linux 解析 `/proc/net/tcp{,6}` `/udp{,6}`；其它 OS 标 gap |
+| `runtimes` | PATH 上的 node/python/java/docker/podman/kubectl/vault/smbclient 等 |
+| `container` | `/.dockerenv`、k8s 环境变量、docker.sock / podman.sock |
+| `configPaths` | syslog / kubeconfig / aws-config / vault-token **存在与否**（不读 token 内容） |
+| `cloud` | aws/gcp/azure/vault 线索与 **host-only** `VAULT_ADDR`；`tokenEnvPresent` 只列变量名 |
+| `suggestions` | 平台适配器 + 端口/包命中；config 强制只读闸 |
+
+建议列表 **不会**批量 `mcp_add`。热加载必须再走 `capability_register` 或控制台确认。

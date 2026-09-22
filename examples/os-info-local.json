@@ -1,0 +1,5 @@
+{
+  "protocol": "os_info",
+  "name": "local",
+  "config": { "allowWrite": false }
+}

@@ -1,8 +1,134 @@
 # 体检报告
 
-**当前状态：Phase U 已落地。下一阶段等用户 continue。** 下文各「本轮」小节是当时快照（历史「仍欠」里写的 Solr 等，若已在后续 Phase 勾完，以最新小节为准）。
+**当前状态：Phase X（Partner + Compat）已落地。** 下文各「本轮」小节是当时快照。
 
-## 本轮：Phase U（Solr / RabbitMQ management / Kubernetes 只读）
+## 本轮：Phase X（Partner 热集成）
+
+南向 Partner → native OpenAPI → mcp_bridge 兜底。应用不实现 MCP。扫描不授予写/桌面/密钥。`GET /api/partner/v1/token` 跳过 REST 密钥脱敏（控制台要能复制本地 Partner token）。
+
+| | suites | tests | pass | fail |
+|---|---:|---:|---:|---:|
+| Phase W | 124 | 522 | 522 | 0 |
+| 本轮 `npm test` | **133** | **545** | **545** | **0** |
+
+```
+# tests 545
+# suites 133
+# pass 545
+# fail 0
+```
+
+| | 说明 |
+|---|---|
+| 新协议 | partner, feishu, dingtalk, wecom, slack, notion, github, mcp_bridge |
+| 新测试 | partner-lifecycle, compat-scan, 各 native adapter, mcp-bridge |
+| 明确没有 | 个人微信私聊 Partner、支付/QQ 协议、mcp_bridge live spawn、Partner IPC invoke、S7+ WeChat tiers |
+
+复跑：`npm run build && npm test`。
+
+## 本轮：Phase W（能力积压 P1–P5）
+
+**未再试** Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 真加载 / Agent 写 challenge。`allowWrite` 默认仍为 `false`。扫描从不打开 `allowShell`/`allowDesktop`/`allowReadSecrets`。无 CIDR UI、无 shim。Boot **不会**批量注册能力。IMDS 永不查询。
+
+| | suites | tests | pass | fail |
+|---|---:|---:|---:|---:|
+| Phase V | 115 | 494 | 494 | 0 |
+| 本轮 `npm test` | **124** | **522** | **522** | **0** |
+
+增长：+9 suite（smb / nfs / vault / aws-iam / alertmanager / pubsub / jira / browser / discovery-phase-v）。以全量跑数为准。
+
+```
+# tests 522
+# suites 124
+# pass 522
+# fail 0
+```
+
+复跑：`npm run build && npm test`。启动 UI：`EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start` → http://127.0.0.1:8742/ui/#/capabilities
+
+### Phase W — 已修 vs 仍欠
+
+**已修：**
+
+| 项 | 做到哪 |
+| --- | --- |
+| Docker/Podman | `logs` + podman docker-compat 工厂；`run` 仍 stub |
+| SMB/CIFS | simulator list/get；live SMB2 NEGOTIATE；TREE_CONNECT 诚实缺口 |
+| NFS | simulator exports；live NFSv3 NULL ping；SHOWMOUNT `E_UNSUPPORTED` |
+| Journal | journal-export + Windows Event XML；journalctl/wevtutil 仍 stub |
+| k8s logs | GET pod log tailLines |
+| Vault/OpenBao | health / list_mounts / list_keys；`read_secret` 要 `allowReadSecrets` |
+| aws_iam | 模拟器；live IMDS/STS `E_UNSUPPORTED` |
+| Alertmanager / Pub/Sub / Jira | 只读 MVP；publish/silence 写闸 |
+| OpenSearch | 同 ES 路径 + `cluster_health` |
+| browser | `allowDesktop` 默认关；打开也不启 Chrome |
+| suggest | 端口/包/云线索；从不拷密钥；从不开写/shell/desktop |
+| 热卸载 | `unregister` hook + 审计；控制台确认；缺 id `E_NOT_FOUND`；黑名单不拦卸载 |
+
+**仍欠（真缺口）：**
+
+| 项 | 为何还欠 |
+| --- | --- |
+| Kafka 真 rebalance / EOS | 无集群；保留 hermetic group_status |
+| SQL CI 真库 | 无 Docker 镜像 CI |
+| LDAP GSSAPI / v2/v3 / Agent challenge | 有意不做 |
+| 完整 CIFS / NFS 客户端 | 有意只做诚实 MVP |
+| allowShell / allowDesktop 真执行 | 有意 stub |
+| Slack webhook | 选了 Jira 只读 |
+
+**不是债：** 无 CIDR UI；`ALLOW_SCAN` 死变量；默认 `allowWrite=false`；无 shim；transport 未改；Full 仍执行黑名单；Full ≠ 全局写；boot 不 bulk-register；scan ≠ write。
+
+---
+
+## 本轮之前：Phase V（最小核心 + 热加载 + 环境/平台）
+
+**未再试** Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 真加载 / Agent 写 challenge。`allowWrite` 默认仍为 `false`。无 CIDR UI、无 shim。Full 仍执行黑名单。Full **不会**全局打开写。Boot **不会**批量注册能力。
+
+| | suites | tests | pass | fail |
+|---|---:|---:|---:|---:|
+| Phase U | 110 | 477 | 477 | 0 |
+| 本轮 `npm test` | **115** | **494** | **494** | **0** |
+
+增长：+5 suite（capability-lifecycle / environment-inventory / platform-adapter / docker / journal）。以全量跑数为准。
+
+```
+# tests 494
+# suites 115
+# pass 494
+# fail 0
+```
+
+复跑：`npm run build && npm test`。启动 UI：`EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start` → http://127.0.0.1:8742/ui/#/capabilities
+
+### Phase V — 已修 vs 仍欠
+
+**已修：**
+
+| 项 | 做到哪 |
+| --- | --- |
+| 热加载管道 | inventory/validate → suggest → policy → confirm/auto-readonly → Catalog.add → live → unregister |
+| 双入口 | 控制台 `#/capabilities` + Agent `capability_*` / `environment_inventory` |
+| 环境盘点 | OS/arch/distro、权限 hint、Linux `/proc/net` 监听端口、PATH 运行时、容器线索 |
+| 平台只读 | os_info / gated fs / process_list / service_list；Win+Linux 代码；macOS best-effort |
+| Docker / journal | HTTP+simulator 只读；syslog 文件读 |
+| 写闸 stub | allowWrite / allowShell；shell_exec 与 docker run 不真执行 |
+
+**仍欠（真缺口）：**
+
+| 项 | 为何还欠 |
+| --- | --- |
+| Kafka 真 rebalance / EOS | 无集群 |
+| SQL CI 真库 | 无 Docker 镜像 CI |
+| LDAP GSSAPI / v2/v3 / Agent challenge | 有意不做 |
+| SMB/CIFS | V4 选了 Docker/journal |
+| allowShell 真执行 | 有意 stub |
+| NFS / mDNS 组播 | 有意不做 |
+
+**不是债：** 无 CIDR UI；`ALLOW_SCAN` 死变量；默认 `allowWrite=false`；无 shim；transport 未改；Full 仍执行黑名单；Full ≠ 全局写；boot 不 bulk-register。
+
+---
+
+## 本轮之前：Phase U（Solr / RabbitMQ management / Kubernetes 只读）
 
 **未再试** Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 真加载 / Agent 写 challenge。`allowWrite` 默认仍为 `false`。无 CIDR UI、无 shim。Full 仍执行黑名单。Full **不会**全局打开写。
 

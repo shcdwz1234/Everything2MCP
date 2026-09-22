@@ -78,6 +78,29 @@ const DEDICATED_TEST: Record<string, string> = {
   solr: "solr-adapter.test.ts",
   rabbitmq: "rabbitmq-adapter.test.ts",
   kubernetes: "kubernetes-adapter.test.ts",
+  os_info: "platform-adapter.test.ts",
+  platform_fs: "platform-adapter.test.ts",
+  platform_process: "platform-adapter.test.ts",
+  platform_service: "platform-adapter.test.ts",
+  docker: "docker-adapter.test.ts",
+  journal: "journal-adapter.test.ts",
+  podman: "docker-adapter.test.ts",
+  smb: "smb-adapter.test.ts",
+  nfs: "nfs-adapter.test.ts",
+  vault: "vault-adapter.test.ts",
+  aws_iam: "aws-iam-adapter.test.ts",
+  alertmanager: "alertmanager-adapter.test.ts",
+  pubsub: "pubsub-adapter.test.ts",
+  jira: "jira-adapter.test.ts",
+  browser: "browser-adapter.test.ts",
+  partner: "partner-lifecycle.test.ts",
+  feishu: "feishu-adapter.test.ts",
+  dingtalk: "dingtalk-adapter.test.ts",
+  wecom: "wecom-adapter.test.ts",
+  slack: "slack-adapter.test.ts",
+  notion: "notion-adapter.test.ts",
+  github: "github-adapter.test.ts",
+  mcp_bridge: "mcp-bridge-adapter.test.ts",
 };
 
 const ALIAS_TEST: Record<string, string> = {
@@ -89,6 +112,9 @@ const ALIAS_TEST: Record<string, string> = {
   enip: "ethernetip-adapter.test.ts",
   influxdb: "influx-adapter.test.ts",
   k8s: "kubernetes-adapter.test.ts",
+  cifs: "smb-adapter.test.ts",
+  openbao: "vault-adapter.test.ts",
+  lark: "feishu-adapter.test.ts",
 };
 
 function walkTs(dir: string): string[] {
@@ -181,6 +207,8 @@ describe("audit: static architecture + registry coverage", () => {
       "docs/ROADMAP.md",
       "docs/BLACKLIST.md",
       "docs/SECURITY_ARCHITECTURE.md",
+      "docs/PARTNER.md",
+      "docs/COMPAT.md",
     ]) {
       assert.equal(existsSync(join(root, file)), true, file);
     }

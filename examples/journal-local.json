@@ -1,0 +1,5 @@
+{
+  "protocol": "journal",
+  "name": "local",
+  "config": { "simulator": true, "allowWrite": false, "allowShell": false }
+}

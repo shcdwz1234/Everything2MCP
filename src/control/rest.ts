@@ -1,4 +1,4 @@
-import { PROTOCOL_CONFIG_HELP, canonicalProtocol, blacklistId, targetFromConfig } from "../catalog/index.js";
+import { PROTOCOL_CONFIG_HELP, canonicalProtocol, blacklistId, targetFromConfig, inferIngress } from "../catalog/index.js";
 import { looksLikeReadRpc } from "../adapters/rpc-gate.js";
 import { AdapterError, ERROR_CODE_HELP, ERROR_CODES, errorPayload } from "../runtime/errors.js";
 import { invokeAudit, invokeAuditEvents } from "../runtime/metrics.js";
@@ -7,12 +7,23 @@ import { knownProtocols } from "../runtime/bootstrap.js";
 import { redactSecrets } from "./redact.js";
 import { MANAGEMENT_TOOL_NAMES, callManagementTool, managementToolSchemas, type ManagementContext } from "./tools.js";
 import { layerOf } from "./layers.js";
+import {
+  assertPartnerToken,
+  partnerHeartbeat,
+  partnerInvokeInternal,
+  partnerRegister,
+  partnerSchemaPayload,
+  partnerUnregister,
+  readOrCreatePartnerToken,
+  rotatePartnerToken,
+} from "./partner.js";
 
 export interface RestRequest {
   method: string;
   pathname: string;
   query: URLSearchParams;
   body?: unknown;
+  headers?: Record<string, string>;
 }
 
 export interface RestResponse {
@@ -26,6 +37,9 @@ const MUTATING_MANAGEMENT = new Set([
   "mcp_remove",
   "mcp_add_from_discovery",
   "schema_import",
+  "capability_register",
+  "capability_unregister",
+  "capability_configure",
 ]);
 
 /**
@@ -39,7 +53,8 @@ export async function handleConsoleRest(ctx: ManagementContext, req: RestRequest
   };
   try {
     const raw = await dispatch(consoleCtx, req);
-    return { status: raw.status, body: redactSecrets(raw.body) };
+    const skipRedact = normalizeApiPath(req.pathname) === "/api/partner/v1/token";
+    return { status: raw.status, body: skipRedact ? raw.body : redactSecrets(raw.body) };
   } catch (err) {
     return errorResponse(err);
   }
@@ -52,7 +67,7 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "GET" && path === "/api/health") {
     const health = await callManagementTool("mcp_health", { verbose: true }, ctx);
-    return { status: 200, body: { ok: true, ...(health as object), console: { wave: "W3", ui: "/ui/" } } };
+    return { status: 200, body: { ok: true, ...(health as object), console: { wave: "X", ui: "/ui/", partner: true } } };
   }
 
   if (method === "GET" && path === "/api/settings") {
@@ -222,6 +237,109 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     return { status: 200, body: removed };
   }
 
+  if (method === "POST" && path === "/api/environment/inventory") {
+    const inv = await callManagementTool("environment_inventory", body, ctx);
+    return { status: 200, body: { ok: true, ...(inv as object) } };
+  }
+
+  if (method === "POST" && path === "/api/capabilities/register") {
+    const auto = body.auto === true;
+    if (!auto && body.confirm !== true) {
+      throw new AdapterError("E_INVALID_ARGUMENT", "Console hot-add requires confirm:true (or auto:true when Safe+readonly)", {
+        details: { confirm: true },
+      });
+    }
+    const registered = await callManagementTool("capability_register", body, ctx);
+    return { status: 201, body: registered };
+  }
+
+  if (method === "POST" && path === "/api/capabilities/unregister") {
+    if (body.confirm !== true) {
+      throw new AdapterError("E_INVALID_ARGUMENT", "Console hot-delete requires confirm:true", {
+        details: { confirm: true },
+      });
+    }
+    const id = typeof body.id === "string" ? body.id : "";
+    const removed = await callManagementTool("capability_unregister", { id }, ctx);
+    return { status: 200, body: removed };
+  }
+
+  const capDel = match(method, "DELETE", "/api/capabilities/:id", path);
+  if (capDel?.id) {
+    const confirm = body.confirm === true || req.query.get("confirm") === "true";
+    if (!confirm) {
+      throw new AdapterError("E_INVALID_ARGUMENT", "Console hot-delete requires confirm:true", {
+        details: { confirm: true },
+      });
+    }
+    const removed = await callManagementTool("capability_unregister", { id: capDel.id }, ctx);
+    return { status: 200, body: removed };
+  }
+
+  if (method === "POST" && path === "/api/capabilities/configure") {
+    const configured = await callManagementTool("capability_configure", body, ctx);
+    return { status: 200, body: configured };
+  }
+
+  if (method === "GET" && path === "/api/partner/v1/schema") {
+    return { status: 200, body: partnerSchemaPayload() };
+  }
+
+  if (method === "GET" && path === "/api/partner/v1/token") {
+    const token = await readOrCreatePartnerToken(ctx.config.dataDir);
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        token,
+        header: "Authorization: Bearer <token> or X-Partner-Token",
+        note: "Local partner token (dataDir/partner-token). Loopback control plane. Distinct from EVERYTHING2MCP_HTTP_TOKEN.",
+      },
+    };
+  }
+
+  if ((method === "POST" || method === "PUT") && path === "/api/partner/v1/token") {
+    if (body.confirm !== true) {
+      throw new AdapterError("E_INVALID_ARGUMENT", "Partner token rotate requires confirm:true", {
+        details: { confirm: true },
+      });
+    }
+    const token = await rotatePartnerToken(ctx.config.dataDir);
+    return { status: 200, body: { ok: true, token, rotated: true } };
+  }
+
+  if (method === "GET" && path === "/api/partner/v1/connections") {
+    const listed = await callManagementTool("partner_list", {}, ctx);
+    return { status: 200, body: listed };
+  }
+
+  if (method === "POST" && path === "/api/compat/scan") {
+    const scanned = await callManagementTool("compat_scan", body, ctx);
+    return { status: 200, body: scanned };
+  }
+
+  if (method === "POST" && path === "/api/partner/v1/register") {
+    await assertPartnerToken(ctx, req.headers);
+    const registered = await partnerRegister(ctx, body);
+    return { status: 201, body: registered };
+  }
+
+  if (method === "POST" && path === "/api/partner/v1/unregister") {
+    await assertPartnerToken(ctx, req.headers);
+    const removed = await partnerUnregister(ctx, body);
+    return { status: 200, body: removed };
+  }
+
+  if (method === "POST" && path === "/api/partner/v1/heartbeat") {
+    await assertPartnerToken(ctx, req.headers);
+    return { status: 200, body: await partnerHeartbeat(ctx, body) };
+  }
+
+  if (method === "POST" && path === "/api/partner/v1/invoke") {
+    await assertPartnerToken(ctx, req.headers);
+    return { status: 200, body: await partnerInvokeInternal(ctx, body) };
+  }
+
   throw new AdapterError("E_NOT_FOUND", `No route for ${method} ${path}`, {
     details: { method, path },
   });
@@ -268,6 +386,7 @@ function decorateAdapter(
     createdAt: record?.createdAt,
     updatedAt: record?.updatedAt,
     allowWrite: record?.config.allowWrite === true,
+    ingress: record ? inferIngress(record.protocol, record.config) : undefined,
     blacklisted,
   };
 }
@@ -369,13 +488,14 @@ function settingsPayload(ctx: ManagementContext): unknown {
     protocolHelp: PROTOCOL_CONFIG_HELP,
     layers: ["business", "management", "all"],
     console: {
-      wave: "W3",
+      wave: "X",
       ui: "/ui/",
       discovery: true,
       import: true,
       plan: true,
       audit: true,
-      tryInvoke: "read-only default",
+      partner: true,
+      compat: true,
       blacklist: true,
       security: true,
     },

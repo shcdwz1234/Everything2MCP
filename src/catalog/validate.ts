@@ -11,6 +11,9 @@ const ALIAS: Record<string, string> = {
   enip: "ethernetip",
   influxdb: "influx",
   k8s: "kubernetes",
+  cifs: "smb",
+  openbao: "vault",
+  lark: "feishu",
 };
 
 export function canonicalProtocol(protocol: string): string {
@@ -84,7 +87,30 @@ export const PROTOCOL_CONFIG_HELP: Record<string, string> = {
   whois: "{ host? | url? | simulator:true, port? }  (TCP 43 只读 query)",
   solr: "{ url? | simulator:true, allowWrite? }  (select/update HTTP; 写闸; 不是 SolrCloud admin)",
   rabbitmq: "{ url? | simulator:true, vhost?, allowWrite? }  (management HTTP 15672; 不是 AMQP 0-9-1)",
-  kubernetes: "{ url? | simulator:true, namespace?, token? }  (只读 list/get pods/services/configmaps; exec/apply E_UNSUPPORTED)",
+  kubernetes: "{ url? | simulator:true, namespace?, token? }  (只读 list/get/logs pods; exec/apply E_UNSUPPORTED)",
+  os_info: "{ }  (本机 OS/arch 只读; 热加载，不在 boot 强制挂载)",
+  platform_fs: "{ roots?, maxBytes? }  (gated list/read; 默认拒绝 / ; 不可 allowWrite)",
+  platform_process: "{ allowShell?, listFn? }  (process_list; shell_exec 闸+stub)",
+  platform_service: "{ allowShell? }  (systemd/sc/launchctl best-effort; 缺工具 E_UNSUPPORTED)",
+  docker: "{ url? | simulator:true, allowWrite? }  (Engine API 只读 list/inspect/logs; run E_UNSUPPORTED)",
+  podman: "{ url? | simulator:true, allowWrite? }  (docker-compat API; 同 docker)",
+  journal: "{ path? | simulator:true, format?: syslog|journal-export|evtx-xml, allowShell? }",
+  smb: "{ host? | simulator:true, port? }  (别名 cifs; 模拟 list/get; live 仅 SMB2 NEGOTIATE)",
+  nfs: "{ host? | simulator:true, port? }  (NFSv3 NULL ping; live SHOWMOUNT E_UNSUPPORTED)",
+  vault: "{ url? | simulator:true, token?, allowReadSecrets? }  (health/list keys; 读 secret 默认关; 别名 openbao)",
+  aws_iam: "{ simulator:true }  (永不打 IMDS; live STS E_UNSUPPORTED)",
+  alertmanager: "{ url? | simulator:true, allowWrite? }  (alerts/status 只读; create_silence 写闸)",
+  pubsub: "{ url? | simulator:true, project?, allowWrite? }  (GCP Pub/Sub emulator HTTP; publish 写闸)",
+  jira: "{ url? | simulator:true, token? }  (myself/search/get_issue 只读)",
+  browser: "{ allowDesktop? }  (默认关; 即使打开也不启动 Chrome)",
+  partner: "{ capability_id, operations[], invoke:{kind:http,url} | simulator:true, heartbeatTtlMs?, allowWrite? }  (E2MCP Partner; 应用不实现 MCP)",
+  feishu: "{ url? | simulator:true, token?, allowWrite? }  (list_chats/search 只读; send_message 写闸)",
+  dingtalk: "{ url? | simulator:true, token?, allowWrite? }  (probe 只读; work notice / robot 写闸)",
+  wecom: "{ url? | simulator:true, token?, allowWrite? }  (dept/user 只读; send_app_message 写闸; 不是个人微信)",
+  slack: "{ url? | simulator:true, token?, allowWrite? }  (conversations.list 只读; post_message 写闸)",
+  notion: "{ url? | simulator:true, token?, allowWrite? }  (search/get_page 只读; create_page 写闸)",
+  github: "{ url? | simulator:true, token?, owner?, repo?, allowWrite? }  (issues/PRs 只读; create_issue 写闸)",
+  mcp_bridge: "{ mcpServers | path, simulator? }  (兜底导入 mcpServers JSON; live spawn E_UNSUPPORTED)",
 };
 
 export function validateRegistration(protocol: string, name: string, config: JsonObject): void {
@@ -210,6 +236,27 @@ export function validateProtocolConfig(protocol: string, config: JsonObject): vo
     case "solr":
     case "rabbitmq":
     case "kubernetes":
+    case "os_info":
+    case "platform_fs":
+    case "platform_process":
+    case "platform_service":
+    case "docker":
+    case "podman":
+    case "journal":
+    case "smb":
+    case "nfs":
+    case "vault":
+    case "aws_iam":
+    case "alertmanager":
+    case "pubsub":
+    case "jira":
+    case "browser":
+    case "feishu":
+    case "dingtalk":
+    case "wecom":
+    case "slack":
+    case "notion":
+    case "github":
       break;
     case "mtconnect":
       if (!has("url", "baseUrl", "fixture", "probeFixture", "xml", "probeXml")) {
@@ -255,6 +302,16 @@ export function validateProtocolConfig(protocol: string, config: JsonObject): vo
       break;
     case "pulsar":
       if (!has("topic", "defaultTopic")) missing("config.topic", PROTOCOL_CONFIG_HELP.pulsar!);
+      break;
+    case "partner":
+      if (!has("operations") && !has("manifest") && !has("capability_id")) {
+        missing("config.operations + capability_id (Partner manifest)", PROTOCOL_CONFIG_HELP.partner!);
+      }
+      break;
+    case "mcp_bridge":
+      if (!has("mcpServers", "servers", "path", "file")) {
+        missing("config.mcpServers or config.path", PROTOCOL_CONFIG_HELP.mcp_bridge!);
+      }
       break;
     default:
       break;

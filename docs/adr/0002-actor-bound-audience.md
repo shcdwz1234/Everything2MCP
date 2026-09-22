@@ -1,6 +1,6 @@
 # ADR 0002 — Actor-bound console audience
 
-Status: Accepted (Phase M; still in force at Phase U)
+Status: Accepted (Phase M; still in force at Phase W)
 
 ## Context
 

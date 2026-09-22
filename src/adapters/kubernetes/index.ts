@@ -14,6 +14,7 @@ export interface K8sObject {
 export interface KubernetesHandle {
   list(kind: "pods" | "services" | "configmaps", namespace: string): Promise<K8sObject[]>;
   get(kind: "pods" | "services" | "configmaps", namespace: string, name: string): Promise<K8sObject>;
+  logs(namespace: string, name: string, tail: number): Promise<{ namespace: string; name: string; lines: string[] }>;
   close(): Promise<void>;
 }
 
@@ -40,6 +41,7 @@ export function createMemoryKubernetes(): KubernetesHandle {
       { kind: "ConfigMap", metadata: { name: "app", namespace: "default" }, data: { LOG: "info" } },
     ],
   ]);
+  const logs = new Map<string, string[]>([["default/web", ["nginx started", "ready"]]]);
   const key = (kind: string, ns: string, name: string) => `${kind}/${ns}/${name}`;
   return {
     async list(kind, namespace) {
@@ -55,6 +57,15 @@ export function createMemoryKubernetes(): KubernetesHandle {
         });
       }
       return { ...hit };
+    },
+    async logs(namespace, name, tail) {
+      const hit = logs.get(`${namespace}/${name}`);
+      if (!hit) {
+        throw new AdapterError("E_NOT_FOUND", `kubernetes logs ${namespace}/${name} missing`, {
+          protocol: "kubernetes",
+        });
+      }
+      return { namespace, name, lines: hit.slice(-tail) };
     },
     async close() {
       store.clear();
@@ -92,6 +103,22 @@ async function httpKubernetes(base: string, timeoutMs: number, token?: string): 
         `/api/v1/namespaces/${encodeURIComponent(namespace)}/${kind}/${encodeURIComponent(name)}`,
       )) as K8sObject;
     },
+    async logs(namespace, name, tail) {
+      const headers: Record<string, string> = { accept: "text/plain" };
+      if (token) headers.authorization = `Bearer ${token}`;
+      const path = `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(name)}/log?tailLines=${tail}`;
+      const res = await fetchSafe(`${root}${path}`, { method: "GET", headers, timeoutMs });
+      const text = await res.text();
+      if (res.status === 404) {
+        throw new AdapterError("E_NOT_FOUND", `kubernetes logs ${namespace}/${name} missing`, { protocol: "kubernetes" });
+      }
+      if (res.status >= 400) {
+        throw new AdapterError("E_PROTOCOL", `kubernetes GET ${path} ${res.status}: ${text.slice(0, 200)}`, {
+          protocol: "kubernetes",
+        });
+      }
+      return { namespace, name, lines: text.split(/\r?\n/).filter(Boolean) };
+    },
     async close() {
       /* stateless */
     },
@@ -116,6 +143,15 @@ export async function listenKubernetesLoopback(mem: KubernetesHandle = createMem
       try {
         if (req.method === "GET" && (path === "/version" || path === "/")) {
           res.end(JSON.stringify({ major: "1", minor: "29", gitVersion: "v1.29.0-e2mcp" }));
+          return;
+        }
+        const podLog = /^\/api\/v1\/namespaces\/([^/]+)\/pods\/([^/]+)\/log$/.exec(path);
+        if (podLog) {
+          const tailRaw = new URL(`http://x${req.url ?? "/"}`).searchParams.get("tailLines");
+          const tail = tailRaw ? Number(tailRaw) : 40;
+          const out = await mem.logs(decodeURIComponent(podLog[1]!), decodeURIComponent(podLog[2]!), Number.isFinite(tail) ? tail : 40);
+          res.setHeader("content-type", "text/plain");
+          res.end(out.lines.join("\n"));
           return;
         }
         if (req.method !== "GET") {
@@ -210,6 +246,17 @@ export class KubernetesAdapter implements ProtocolAdapter {
         inputSchema: { type: "object", properties: { name, namespace: ns }, required: ["name"], additionalProperties: false },
       },
       {
+        name: "logs",
+        description: "GET /api/v1/namespaces/{ns}/pods/{name}/log (tailLines). Shallow stdout snapshot, not a follow/stream.",
+        inputSchema: {
+          type: "object",
+          properties: { name, namespace: ns, tail: { type: "integer", default: 40 } },
+          required: ["name"],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true },
+      },
+      {
         name: "exec",
         description: "Pod exec — not implemented (E_UNSUPPORTED)",
         inputSchema: { type: "object", properties: { name, command: { type: "string" } }, required: ["name"], additionalProperties: false },
@@ -232,6 +279,10 @@ export class KubernetesAdapter implements ProtocolAdapter {
     if (toolName === "get_service") return h.get("services", ns, requiredString(args, "name"));
     if (toolName === "list_configmaps") return { items: await h.list("configmaps", ns) };
     if (toolName === "get_configmap") return h.get("configmaps", ns, requiredString(args, "name"));
+    if (toolName === "logs") {
+      const tail = typeof args.tail === "number" && args.tail > 0 ? Math.min(args.tail, 200) : 40;
+      return h.logs(ns, requiredString(args, "name"), tail);
+    }
     if (toolName === "exec" || toolName === "apply") {
       throw new AdapterError(
         "E_UNSUPPORTED",

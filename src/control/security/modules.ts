@@ -48,7 +48,7 @@ export function createBuiltinModules(deps: {
 
   const coreAudit: SecurityModule = {
     id: "core-audit",
-    hooks: ["auth", "discover", "register", "invoke", "import", "list", "modeChange"],
+    hooks: ["auth", "discover", "register", "unregister", "invoke", "import", "list", "modeChange"],
     locked: true,
     bypassInFullControl: false,
     async evaluate() {
@@ -58,7 +58,7 @@ export function createBuiltinModules(deps: {
 
   const coreIntegrity: SecurityModule = {
     id: "core-integrity",
-    hooks: ["discover", "register", "import", "invoke", "modeChange"],
+    hooks: ["discover", "register", "unregister", "import", "invoke", "modeChange"],
     locked: true,
     bypassInFullControl: false,
     async evaluate(ctx) {
@@ -192,7 +192,7 @@ export function createBuiltinModules(deps: {
 
   const secretRedact: SecurityModule = {
     id: "secret-redact",
-    hooks: ["register", "invoke", "import", "list", "modeChange"],
+    hooks: ["register", "unregister", "invoke", "import", "list", "modeChange"],
     locked: false,
     bypassInFullControl: false,
     async evaluate() {

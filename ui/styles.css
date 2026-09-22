@@ -115,6 +115,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   background: var(--accent-dim); color: var(--accent);
   font-family: var(--mono); font-size: 11px;
 }
+.ingress {
+  display: inline-flex; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.ingress-partner { color: var(--accent); border-color: var(--accent); }
+.ingress-mcp_bridge { color: var(--warn); border-color: var(--warn); }
 
 .btn {
   border: 1px solid var(--line); background: var(--panel-2);

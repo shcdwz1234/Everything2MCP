@@ -14,7 +14,9 @@ type Page =
   | { name: "audit" }
   | { name: "plan" }
   | { name: "blacklist" }
-  | { name: "security" };
+  | { name: "security" }
+  | { name: "capabilities" }
+  | { name: "partner" };
 
 const root = document.getElementById("app")!;
 let health: Record<string, unknown> | undefined;
@@ -42,6 +44,8 @@ function parseHash(): Page {
   if (parts[0] === "plan") return { name: "plan" };
   if (parts[0] === "blacklist") return { name: "blacklist" };
   if (parts[0] === "security") return { name: "security" };
+  if (parts[0] === "capabilities") return { name: "capabilities" };
+  if (parts[0] === "partner") return { name: "partner" };
   return { name: "dashboard" };
 }
 
@@ -67,6 +71,12 @@ function pretty(value: unknown): string {
 
 function protoBadge(protocol: string): string {
   return `<span class="proto">${esc(protocol)}</span>`;
+}
+
+function ingressBadge(ingress: unknown): string {
+  const v = String(ingress ?? "native");
+  const label = v === "mcp_bridge" ? "mcp_bridge 兜底" : v;
+  return `<span class="ingress ingress-${esc(v)}">${esc(label)}</span>`;
 }
 
 function statusDot(ok: boolean | undefined, failed?: boolean): string {
@@ -103,6 +113,8 @@ function layout(page: Page, body: string): string {
         ${navLink(page, "/tools", "工具")}
         ${navLink(page, "/plan", "计划桥")}
         ${navLink(page, "/discovery", "发现")}
+        ${navLink(page, "/capabilities", "热加载")}
+        ${navLink(page, "/partner", "伙伴")}
         ${navLink(page, "/import", "导入")}
         ${navLink(page, "/audit", "审计")}
         ${navLink(page, "/blacklist", "黑名单")}
@@ -225,6 +237,10 @@ async function renderPage(page: Page): Promise<string> {
       return renderBlacklist();
     case "security":
       return renderSecurity();
+    case "capabilities":
+      return renderCapabilities();
+    case "partner":
+      return renderPartner();
   }
 }
 
@@ -282,6 +298,7 @@ async function renderAdapters(): Promise<string> {
         <td>${statusDot(a.status === "live", a.status !== "live")}</td>
         <td><a href="${href(`/adapters/${encodeURIComponent(String(a.id))}`)}">${esc(a.id)}</a></td>
         <td>${protoBadge(String(a.protocol))}</td>
+        <td>${ingressBadge(a.ingress)}</td>
         <td>${esc(a.name)}</td>
         <td>${a.allowWrite === true ? "on" : "off"}</td>
         <td>${esc(a.toolCount ?? 0)}</td>
@@ -299,8 +316,8 @@ async function renderAdapters(): Promise<string> {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th></th><th>ID</th><th>协议</th><th>名称</th><th>allowWrite</th><th>Tools</th><th>黑名单</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="7" class="empty">空注册表。<a href="${href("/adapters/new")}">新建适配器</a> 或从 <a href="${href("/discovery")}">发现</a> 导入。</td></tr>`}</tbody>
+        <thead><tr><th></th><th>ID</th><th>协议</th><th>ingress</th><th>名称</th><th>allowWrite</th><th>Tools</th><th>黑名单</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="8" class="empty">空注册表。<a href="${href("/adapters/new")}">新建适配器</a> 或从 <a href="${href("/discovery")}">发现</a> 导入。</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -475,6 +492,104 @@ async function renderDiscovery(): Promise<string> {
       </form>
     </div>
     <div id="scan-out"></div>
+  `;
+}
+
+async function renderCapabilities(): Promise<string> {
+  const listed = await rest.adapters();
+  const adapters = (listed.adapters as Array<Record<string, unknown>>) ?? [];
+  const liveRows = adapters
+    .map(
+      (a) => `<tr>
+        <td>${statusDot(a.status === "live", a.status !== "live")}</td>
+        <td><a href="${href(`/adapters/${encodeURIComponent(String(a.id))}`)}">${esc(a.id)}</a></td>
+        <td>${protoBadge(String(a.protocol))}</td>
+        <td>${ingressBadge(a.ingress)}</td>
+        <td>${esc(a.toolCount ?? 0)}</td>
+        <td>${a.allowWrite === true ? "on" : "off"}</td>
+        <td><button class="btn" type="button" data-hot-del="${esc(a.id)}">热卸载</button></td>
+      </tr>`,
+    )
+    .join("");
+  return `
+    <div class="page-head">
+      <div>
+        <h2>热加载 / 热卸载</h2>
+        <p>部署只带最小 MCP 核心。能力增长走共享管道：环境盘点 / Compat 扫描 / 发现建议 → 策略闸 → 确认（或 Safe+只读自动）。<strong>热卸载</strong>走同一 Policy Gateway。南向优先：Partner → native → mcp_bridge 兜底。扫描成功 ≠ 打开写/桌面/密钥。</p>
+      </div>
+    </div>
+    <div class="table-wrap" style="margin-bottom:16px">
+      <table>
+        <thead><tr><th></th><th>ID</th><th>协议</th><th>ingress</th><th>Tools</th><th>写</th><th></th></tr></thead>
+        <tbody>${liveRows || `<tr><td colspan="7" class="empty">还没有热加载的能力。下方盘点或手动配置后确认热加载。</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="row-actions" style="margin-bottom:12px">
+      <button class="btn primary" type="button" id="inv-btn">本机环境盘点</button>
+    </div>
+    <div id="inv-out"></div>
+    <form class="card" id="manual-hotadd">
+      <h3>手动配置热加载</h3>
+      <div class="field">
+        <label>protocol</label>
+        <input name="protocol" placeholder="os_info" required />
+      </div>
+      <div class="field">
+        <label>name</label>
+        <input name="name" placeholder="local" required />
+      </div>
+      <div class="field">
+        <label>config JSON</label>
+        <textarea name="config">{"allowWrite":false}</textarea>
+      </div>
+      <label class="hint"><input type="checkbox" name="auto" /> auto（仅 Safe + 只读 + 非黑名单）</label>
+      <div class="row-actions">
+        <button class="btn primary" type="submit">确认热加载</button>
+      </div>
+    </form>
+    <pre id="hotadd-result" hidden></pre>
+  `;
+}
+
+async function renderPartner(): Promise<string> {
+  const [listed, token] = await Promise.all([rest.partnerConnections(), rest.partnerToken()]);
+  const connections = ((listed as { connections?: Array<Record<string, unknown>> }).connections ?? []) as Array<
+    Record<string, unknown>
+  >;
+  const rows = connections
+    .map(
+      (a) => `<tr>
+        <td>${statusDot(a.status === "live", a.status !== "live")}</td>
+        <td>${esc(a.id)}</td>
+        <td>${ingressBadge(a.ingress ?? "partner")}</td>
+        <td>${esc(a.toolCount ?? 0)}</td>
+        <td><button class="btn" type="button" data-hot-del="${esc(a.id)}">确认卸载</button></td>
+      </tr>`,
+    )
+    .join("");
+  return `
+    <div class="page-head">
+      <div>
+        <h2>Partner 连接</h2>
+        <p>南向优先 Partner 协议。应用<strong>不实现 MCP</strong>。Agent 只配置一个 Everything2MCP。mcp_bridge 是兜底，不是主路径。</p>
+      </div>
+    </div>
+    <div class="card">
+      <h3>本地 Partner token</h3>
+      <p class="hint">写在 <code>dataDir/partner-token</code>。和 HTTP_TOKEN 分开。循环回环 + Partner token 才能 register/heartbeat/unregister。</p>
+      <pre>${esc((token as { token?: string }).token ?? "")}</pre>
+      <button class="btn" type="button" id="rotate-partner-token">轮换 token（需确认）</button>
+    </div>
+    <div class="table-wrap" style="margin:16px 0">
+      <table>
+        <thead><tr><th></th><th>ID</th><th>ingress</th><th>Tools</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="empty">还没有 Partner。把清单丢进 ~/.everything2mcp/drops 或跑 examples/partner-demo-chat。</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="row-actions">
+      <button class="btn primary" type="button" id="compat-scan-btn">Compat 扫描</button>
+    </div>
+    <div id="compat-out"></div>
   `;
 }
 
@@ -755,6 +870,161 @@ function bindPage(page: Page): void {
       const btn = (ev.target as HTMLElement).closest("button[data-layer]");
       const layer = btn?.getAttribute("data-layer");
       if (layer) location.hash = `/tools?layer=${layer}`;
+    });
+  }
+
+  document.querySelectorAll("button[data-hot-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = (btn as HTMLElement).dataset.hotDel;
+      if (!id) return;
+      if (!window.confirm(`热卸载 ${id}？会断开适配器并从 Catalog / MCP tools/list 立刻拿掉。不要求 allowWrite。`)) return;
+      try {
+        await rest.hotRemove(id);
+        showToast("ok", `已热卸载 ${id}`);
+        void render();
+      } catch (err) {
+        showToast("err", err instanceof Error ? err.message : String(err));
+      }
+    });
+  });
+
+  document.getElementById("rotate-partner-token")?.addEventListener("click", async () => {
+    if (!window.confirm("轮换本地 Partner token？已连接的 Partner 应用需要改用新 token。")) return;
+    try {
+      await rest.rotatePartnerToken();
+      showToast("ok", "Partner token 已轮换");
+      void render();
+    } catch (err) {
+      showToast("err", err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  document.getElementById("compat-scan-btn")?.addEventListener("click", async () => {
+    const box = document.getElementById("compat-out");
+    if (box) box.innerHTML = `<div class="hint">扫描 Compat…</div>`;
+    try {
+      const data = await rest.compatScan();
+      const suggestions = ((data as { suggestions?: Array<Record<string, unknown>> }).suggestions ?? []) as Array<
+        Record<string, unknown>
+      >;
+      const cards = suggestions
+        .map(
+          (s, i) => `<div class="card">
+            <div>${protoBadge(String(s.protocol))} ${ingressBadge(s.ingress)} <strong>${esc(s.name)}</strong> · ${esc(s.priority ?? "")}</div>
+            <div class="hint">${esc(s.reason ?? "")}</div>
+            <pre>${esc(pretty(s.config))}</pre>
+            <button class="btn primary" type="button" data-compat-sug="${i}">确认热加载</button>
+          </div>`,
+        )
+        .join("");
+      if (box) box.innerHTML = `<p class="hint">建议 ${suggestions.length} 条。扫描本身不注册、不打开写。</p>${cards}`;
+      box?.querySelectorAll("button[data-compat-sug]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const i = Number((btn as HTMLElement).dataset.compatSug);
+          const s = suggestions[i];
+          if (!s) return;
+          try {
+            const r = await rest.hotAdd({ ...s, confirm: true });
+            showToast("ok", `已热加载 ${String((r as { id?: string }).id ?? s.protocol)}`);
+            void render();
+          } catch (err) {
+            showToast("err", err instanceof Error ? err.message : String(err));
+          }
+        });
+      });
+    } catch (err) {
+      if (box) box.innerHTML = `<div class="warn-box">${esc(err instanceof Error ? err.message : String(err))}</div>`;
+    }
+  });
+
+  document.getElementById("inv-btn")?.addEventListener("click", async () => {
+    const box = document.getElementById("inv-out");
+    if (box) box.innerHTML = `<div class="hint">盘点本机…</div>`;
+    try {
+      const data = await rest.inventory();
+      const suggestions = (data.suggestions as Array<Record<string, unknown>>) ?? [];
+      const cards = suggestions
+        .map(
+          (s, i) => `<div class="card">
+            <div>${protoBadge(String(s.protocol))} <strong>${esc(s.name)}</strong> · ${esc(s.confidence ?? "")}</div>
+            <div class="hint">${esc(s.reason ?? "")}</div>
+            <pre>${esc(pretty(s.config))}</pre>
+            <div class="row-actions">
+              <button class="btn primary" type="button" data-hot-sug="${i}">确认热加载</button>
+              <button class="btn" type="button" data-hot-auto="${i}">Safe 只读自动</button>
+            </div>
+          </div>`,
+        )
+        .join("");
+      if (box) {
+        box.innerHTML = `<p class="hint">建议 ${suggestions.length} 条。盘点本身不注册。</p>${cards}<pre>${esc(pretty((data as { inventory?: unknown }).inventory))}</pre>`;
+      }
+      const list = suggestions;
+      box?.querySelectorAll("button[data-hot-sug]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const i = Number((btn as HTMLElement).dataset.hotSug);
+          const suggestion = list[i];
+          if (!suggestion) return;
+          if (!window.confirm("确认热加载该只读能力？不会打开 allowWrite。")) return;
+          try {
+            await rest.hotAdd({ suggestion, confirm: true });
+            showToast("ok", `已热加载 ${String(suggestion.protocol)}:${String(suggestion.name)}`);
+            void render();
+          } catch (err) {
+            showToast("err", err instanceof Error ? err.message : String(err));
+          }
+        });
+      });
+      box?.querySelectorAll("button[data-hot-auto]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const i = Number((btn as HTMLElement).dataset.hotAuto);
+          const suggestion = list[i];
+          if (!suggestion) return;
+          try {
+            await rest.hotAdd({ suggestion, auto: true });
+            showToast("ok", `auto 热加载 ${String(suggestion.protocol)}:${String(suggestion.name)}`);
+            void render();
+          } catch (err) {
+            showToast("err", err instanceof Error ? err.message : String(err));
+          }
+        });
+      });
+    } catch (err) {
+      showToast("err", err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  const manualHot = document.getElementById("manual-hotadd") as HTMLFormElement | null;
+  if (manualHot) {
+    manualHot.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(manualHot);
+      let config: unknown = {};
+      try {
+        config = JSON.parse(String(fd.get("config") || "{}"));
+      } catch {
+        showToast("err", "config JSON 无效");
+        return;
+      }
+      const body = {
+        protocol: String(fd.get("protocol") || "").trim(),
+        name: String(fd.get("name") || "").trim(),
+        config,
+        confirm: true,
+        auto: Boolean(fd.get("auto")),
+      };
+      if (!window.confirm("确认热加载？默认 allowWrite=false。")) return;
+      try {
+        const r = await rest.hotAdd(body);
+        const pre = document.getElementById("hotadd-result");
+        if (pre) {
+          pre.hidden = false;
+          pre.textContent = pretty(r);
+        }
+        showToast("ok", `已热加载 ${body.protocol}:${body.name}`);
+      } catch (err) {
+        showToast("err", err instanceof Error ? err.message : String(err));
+      }
     });
   }
 

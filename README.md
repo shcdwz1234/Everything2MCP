@@ -4,7 +4,7 @@
 
 > Universal protocol→MCP bridge. Discover, register, and invoke heterogeneous endpoints as hot-reloadable MCP tools.
 
-**当前快照（Phase U 已落地）：** 单进程五包；同进程深色控制台 `/ui`；Safe/Full 安全平面；黑名单两模式都生效。测试基线 **110 suites / 477 tests**（`npm test`）。下一阶段 **等用户 continue**，本仓库不自动开新协议。
+**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。逻辑平面仍是五包。测试：`npm test`。
 
 ## 为什么
 
@@ -24,7 +24,7 @@
 cd D:\Everything2MCP          # 或本机实际路径
 npm install
 npm run build
-npm test                      # 期望 ~110 suites / 477 tests，全绿
+`npm test`                      # 全绿
 ```
 
 Node **≥ 18.18**。默认 **stdio MCP**（给 Cursor / Claude Desktop；不要当终端 REPL 用）：
@@ -46,7 +46,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 
 可选鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`，客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
 
-同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。页面：Dashboard / Adapters / Tools / Discovery / Import / `#/audit` / `#/plan` / `#/blacklist` / `#/security` / 协议矩阵 / Settings。写操作需二次确认且仍受 `allowWrite`。**没有 CIDR 扫描 UI。**
+同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。页面：Dashboard / Adapters / Tools / Discovery / **`#/capabilities` 热加载** / **`#/partner` 伙伴** / Import / `#/audit` / `#/plan` / `#/blacklist` / `#/security` / 协议矩阵 / Settings。写操作需二次确认且仍受 `allowWrite`。**没有 CIDR 扫描 UI。** 南向 ingress 徽章：`partner` / `native` / `mcp_bridge`（兜底）。
 
 开发模式：`npm run dev`（`tsx watch`，仍默认 stdio）。
 
@@ -86,7 +86,29 @@ catalog    →  runtime/bootstrap  →  adapters
 | Discovery & Import | 单主机探测、`discovery_suggest`、`schema_import` |
 | Adapter Runtime | SPI + 扁平 `src/adapters/<protocol>/`；v1 **只有 builtins** |
 
-硬约束：adapters 不得 import control/transport；无 `src/core` / `src/management` shim。详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+硬约束：adapters 不得 import control/transport；无 `src/core` / `src/management` shim。**逻辑平面**（Environment / Platform / Capability Lifecycle / Policy）叠在五包上，不是新目录。详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+## 热加载 / 热卸载（Phase V 引入，Phase W 补齐热卸载）
+
+Boot **不会**把 os_info / docker / 本机盘点结果写进 catalog。增长与收缩走**同一条** Policy Gateway 管道：
+
+1. 控制台 `#/capabilities`：环境盘点或手动 config → 建议列表 → **确认**热加载（Safe+只读可勾 auto）。已挂能力可 **热卸载**（二次确认；不要求 `allowWrite`）。
+2. Agent：`environment_inventory` → `capability_register`（`auto:true` 仅 Safe + `allowWrite`/`allowShell`/`allowDesktop`/`allowReadSecrets` 非 true + 非黑名单）
+3. Agent / 控制台：`capability_unregister` `{ id }`（与 `mcp_remove` 同一 Catalog.remove；黑名单不拦卸载，但拦再注册）
+
+`capability_register` / `mcp_add` / `mcp_add_from_discovery` / POST `/api/adapters` 走同一 `add()`。`capability_unregister` / `mcp_remove` / POST `/api/capabilities/unregister`（`confirm:true`）/ DELETE `/api/capabilities/:id?confirm=true` 走同一 `remove()`。卸载后 tools 立刻从 Catalog 与 MCP `tools/list` 消失，无需重启。建议列表 **从不**批量自动注册。
+
+新管理工具：`environment_inventory`、`capability_register`、`capability_unregister`、`capability_configure`、**`partner_list`**、**`compat_scan`**。
+
+## Partner / Compat（Phase X）
+
+北向 = MCP only。南向优先级见 [docs/PARTNER.md](docs/PARTNER.md) 与 [docs/COMPAT.md](docs/COMPAT.md)：
+
+1. Partner 协议（应用不写 MCP）。清单 + HTTP invoke。Demo：`examples/partner-demo-chat/`（零 MCP 代码）。
+2. Native 适配器：`feishu` / `dingtalk` / `wecom` / `slack` / `notion` / `github`（模拟器 + `allowWrite` 闸）。
+3. `mcp_bridge` 兜底导入本地 `mcpServers` JSON（live spawn = `E_UNSUPPORTED`）。
+
+Drops：`~/.everything2mcp/drops/*.json`（Windows `%LOCALAPPDATA%\everything2mcp\drops`）。扫描成功 ≠ 打开写/桌面/密钥。个人微信私聊 **不**宣称 Partner 兼容。
 
 ## 安全（已锁定，不再重开）
 
@@ -127,7 +149,7 @@ MCP 使用 **stdio**。路径按本机修改（同步树在 `D:\Everything2MCP` 
 }
 ```
 
-启动后，Agent 应能看到管理工具：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`schema_import`、`discovery_suggest`，以及可选的 `discovery_probe` / `discovery_scan_host`。黑名单管理工具 `mcp_blacklist_*` 给操作员用，默认不要当业务层。
+启动后，Agent 应能看到管理工具：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`schema_import`、`discovery_suggest`、`environment_inventory`、`capability_register` / `capability_unregister` / `capability_configure`、`partner_list`、`compat_scan`，以及可选的 `discovery_probe` / `discovery_scan_host`。黑名单管理工具 `mcp_blacklist_*` 给操作员用，默认不要当业务层。
 
 ## Agent 自主使用
 
@@ -171,10 +193,14 @@ AsyncAPI / Sparkplug 示例见 `examples/streetlights.asyncapi.json`、`examples
 | `discovery_probe` | `host`, `port?` | 单端口 OpenAPI/SOAP/GraphQL 路径 |
 | `discovery_scan_host` | `host`, `port?` | 单主机多协议并行探测 |
 | `discovery_suggest` | `host` 或 `candidates` | 探测结果 → mcp_add 草案 |
+| `environment_inventory` | （无） | 本机盘点 → suggest（不注册） |
+| `capability_register` | suggestion 或 protocol/name/config，`auto?` `confirm?` | 热加载（与 mcp_add 同一闸） |
+| `capability_unregister` | `id` | 热卸载（控制面，不要求 allowWrite；缺 id → `E_NOT_FOUND`） |
+| `capability_configure` | `id`, `config` | 热重配 |
 
 注册 id 形如 `openapi:widgets`。业务 tools 命名：`{protocol}.{name}.{operationId}`。
 
-`tools/list` 里每条 tool 带 `_meta.layer`：`management`（`mcp_*` / `discovery_*` / `schema_import`）或 `business`。Agent 应优先 `mcp_list { "layer": "business" }`，避免管理工具把上下文撑满。`annotations.title` 也有 `Management ·` / `Business ·` 前缀。
+`tools/list` 里每条 tool 带 `_meta.layer`：`management`（`mcp_*` / `discovery_*` / `environment_inventory` / `capability_*` / `schema_import`）或 `business`。Agent 应优先 `mcp_list { "layer": "business" }`，避免管理工具把上下文撑满。`annotations.title` 也有 `Management ·` / `Business ·` 前缀。
 
 ### 添加 OpenAPI 示例
 
@@ -323,6 +349,12 @@ AMQP：`publish`、`consume_once` / `get` / `ack`、`list_queues`（线协议 **
 | `solr` | `url?` / `simulator?` | `list_cores` `select` `update` | HTTP；写需 allowWrite |
 | `rabbitmq` | `url?` / `simulator?` | `list_queues` `publish` `get` | **management HTTP**；不是 AMQP |
 | `kubernetes` / `k8s` | `url?` / `simulator?` | list/get pods/services/configmaps | 只读；exec/apply **恒** `E_UNSUPPORTED` |
+| `os_info` | （空） | `uname` | 本机 OS；热加载，不在 boot 挂载 |
+| `platform_fs` | `roots?` | `list` `read` `roots` | 闸根目录；不可 allowWrite |
+| `platform_process` | `allowShell?` | `process_list` `shell_exec` | Linux `/proc`；Win/mac 注入或 gap；shell_exec 闸+stub |
+| `platform_service` | `allowShell?` | `service_list` | systemd/sc/launchctl；缺工具 `E_UNSUPPORTED` |
+| `docker` | `url?` / `simulator?` | list/inspect | Engine HTTP 只读；`run` 恒 stub |
+| `journal` | `path?` / `simulator?` | `read` | syslog 文件；wevtutil/journalctl stub |
 | `prometheus` | `url` / `simulator?` | `query` `query_range` `remote_write` | protobuf+snappy 写需 allowWrite；内存 query 按名 |
 | `influx` / `influxdb` | `bucket`, `url?` | `write_points` `delete_points` `query` | Flux + `/api/v2/delete`；写/删需 allowWrite |
 | `snmp` / `ftp` / `webdav` / `etcd` | 见 PROTOCOLS | get/walk；list/retr；propfind；range/put | SNMP **无 v3**；FTP **不是 SFTP** |
@@ -392,7 +424,7 @@ src/discovery/     单主机探测；suggest/import 已挂成 MCP 工具
 src/runtime/       内核：types/errors/auth/load/log/invoke
 src/adapters/      SPI + 扁平协议实现 + 可选 pack 分组
 examples/          配置与 OpenAPI/WSDL/proto 夹具
-tests/             注册表 + 各适配器 + MCP 语义（~110 suites）
+tests/             注册表 + 各适配器 + MCP 语义（~133 suites）
 docs/              架构 / ADR / 协议目录 / 发现 / 安全 / 发布说明
 ui/                同进程控制台源；构建进 dist/ui
 ```
@@ -407,7 +439,7 @@ ui/                同进程控制台源；构建进 dist/ui
 - [Phase M 审查纪要（历史）](docs/PHASE_M_REVIEW.md)
 - [协议目录（Implemented / Thin / leftover）](docs/PROTOCOLS.md)
 - [发现](docs/DISCOVERY.md)
-- [Roadmap（P0–U 执行顺序；下一阶段等用户）](docs/ROADMAP.md)
+- [Roadmap（P0–V 执行顺序；下一阶段等用户）](docs/ROADMAP.md)
 - [发布说明 / 变更记录](docs/RELEASE_NOTES.md)
 - [Web 控制台](docs/CONSOLE.md)
 - [安全架构（锁定决策）](docs/SECURITY_ARCHITECTURE.md)
@@ -425,7 +457,7 @@ ui/                同进程控制台源；构建进 dist/ui
 | `npm run build` | `tsc` → `dist/`，并 `ui:build` 到 `dist/ui` |
 | `npm run ui:build` | 控制台 SPA → `dist/ui` |
 | `npm start` | 运行 MCP server（默认 stdio；见 `EVERYTHING2MCP_TRANSPORT`） |
-| `npm test` | `tsx --test`（当前基线 110 / 477） |
+| `npm test` | `tsx --test`（当前基线 115 / 494） |
 | `npm run dev` | `tsx watch` |
 
 ## 有意不做 / 环境挡住（不是漏写）
@@ -435,14 +467,17 @@ ui/                同进程控制台源；构建进 dist/ui
 - LDAP **GSSAPI**
 - v2 本地 JS / v3 npm **外部安全插件加载**
 - MCP **Agent 写 challenge**（只有控制台 `confirm:true`）
-- **NFS** 适配器
+- **NFS** 完整客户端 / SHOWMOUNT（已有 NFSv3 NULL ping + simulator exports）
 - mDNS **组播浏览**（单播 `host:5353` 已有）
+- 部署时批量注册能力 / 默认打开桌面控制
+- `allowShell` / `allowDesktop` 真执行（只有闸与 stub；扫描从不打开）
+- SMB/CIFS 完整 TREE_CONNECT 文件客户端（已有 SMB2 NEGOTIATE + simulator）
 
 ## English
 
 Everything2MCP is a single-process MCP server: **discover, register, invoke** heterogeneous protocols as MCP tools. **stdio is the default.** Set `EVERYTHING2MCP_TRANSPORT=http` (or `sse`) to serve Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and the same-process dark console at `/ui/` (REST under `/api/*`) on port `8742`. Optional `EVERYTHING2MCP_HTTP_TOKEN` requires `Authorization: Bearer` or `x-api-key`.
 
-**Phase U is current** (Solr HTTP, RabbitMQ **management** HTTP — not AMQP — Kubernetes read-only list/get). Test baseline **110 suites / 477 tests**. Next work waits for an explicit continue.
+**Phase X is current** (Partner protocol + Compat Catalog + native Feishu/DingTalk/WeCom/Slack/Notion/GitHub + mcp_bridge 兜底). Test baseline **133 suites / 545 tests**. Southbound is not MCP by default. Next work waits for an explicit continue.
 
 Security (locked): Safe vs Full; blacklist always on (including Full); default `allowWrite=false`; Full ≠ global write; no CIDR UI; `ALLOW_SCAN` is dead; no shim; actor-bound audience so agents cannot spoof `audience=console`. Plugin SPI: builtins only in v1.
 

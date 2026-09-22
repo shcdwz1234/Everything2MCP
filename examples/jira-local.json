@@ -1,0 +1,5 @@
+{
+  "protocol": "jira",
+  "name": "local",
+  "config": { "simulator": true }
+}

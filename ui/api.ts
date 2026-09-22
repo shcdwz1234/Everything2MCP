@@ -63,6 +63,10 @@ export const rest = {
   suggest: (body: unknown) => api("/api/discovery/suggest", { method: "POST", body: JSON.stringify(body) }),
   registerSuggestion: (body: unknown) =>
     api("/api/discovery/register", { method: "POST", body: JSON.stringify(body) }),
+  inventory: () => api("/api/environment/inventory", { method: "POST", body: "{}" }),
+  hotAdd: (body: unknown) => api("/api/capabilities/register", { method: "POST", body: JSON.stringify(body) }),
+  hotRemove: (id: string) =>
+    api("/api/capabilities/unregister", { method: "POST", body: JSON.stringify({ id, confirm: true }) }),
   importSchema: (body: unknown) => api("/api/import", { method: "POST", body: JSON.stringify(body) }),
   audit: (limit = 80) => api(`/api/audit?limit=${limit}`),
   plan: (body: unknown) => api("/api/plan", { method: "POST", body: JSON.stringify(body) }),
@@ -73,4 +77,14 @@ export const rest = {
   security: () => api("/api/security"),
   setMode: (mode: string) =>
     api("/api/security/mode", { method: "PUT", body: JSON.stringify({ mode, confirm: true }) }),
+  partnerConnections: () => api("/api/partner/v1/connections"),
+  partnerToken: () => api("/api/partner/v1/token"),
+  rotatePartnerToken: () =>
+    api("/api/partner/v1/token", { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  partnerUnregister: (capability_id: string) =>
+    api("/api/partner/v1/unregister", {
+      method: "POST",
+      body: JSON.stringify({ capability_id, confirm: true }),
+    }),
+  compatScan: () => api("/api/compat/scan", { method: "POST", body: "{}" }),
 };

@@ -1,6 +1,6 @@
 # TLS / 证书
 
-**当前快照：Phase K 起已落地 watch + gRPC remount；Phase U 未改 TLS 合同。**
+**当前快照：Phase K 起已落地 watch + gRPC remount；Phase W 未改 TLS 合同。**
 
 适配器在 **connect** 时读证书。`watchTlsMaterial` 对文件路径做 `fs.watch`，变更后 **热重读** 到内存（不重启进程）。删文件 / 读失败记 `lastError`（`E_INVALID_CONFIG`），可测。
 

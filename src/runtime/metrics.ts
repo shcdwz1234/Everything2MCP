@@ -12,7 +12,7 @@ export interface InvokeAudit {
 export interface InvokeAuditEvent {
   at: string;
   ok: boolean;
-  kind?: "invoke" | "mode_change" | "policy";
+  kind?: "invoke" | "mode_change" | "policy" | "unregister";
   tool?: string;
   protocol?: string;
   adapterId?: string;
@@ -45,7 +45,10 @@ export function recordAdapterInvoke(ok: boolean, extra?: Record<string, unknown>
   const event: InvokeAuditEvent = redactSecrets({
     at: new Date().toISOString(),
     ok,
-    kind: extra?.kind === "mode_change" || extra?.kind === "policy" ? extra.kind : "invoke",
+    kind:
+      extra?.kind === "mode_change" || extra?.kind === "policy" || extra?.kind === "unregister"
+        ? extra.kind
+        : "invoke",
     tool: typeof extra?.tool === "string" ? extra.tool : undefined,
     protocol: typeof extra?.protocol === "string" ? extra.protocol : undefined,
     adapterId: typeof extra?.adapterId === "string" ? extra.adapterId : undefined,

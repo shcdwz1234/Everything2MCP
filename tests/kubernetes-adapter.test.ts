@@ -19,6 +19,8 @@ describe("KubernetesAdapter", () => {
       assert.equal(svc.kind, "Service");
       const cm = (await adapter.invoke("get_configmap", { name: "app" })) as { data: { LOG: string } };
       assert.equal(cm.data.LOG, "info");
+      const logs = (await adapter.invoke("logs", { name: "web", tail: 10 })) as { lines: string[] };
+      assert.ok(logs.lines.includes("nginx started"));
       await assert.rejects(
         () => adapter.invoke("exec", { name: "web", command: "ls" }),
         (err: unknown) => err instanceof AdapterError && err.code === "E_UNSUPPORTED",

@@ -56,6 +56,9 @@ import {
   fingerprintSolr,
   fingerprintRabbitmq,
   fingerprintKubernetes,
+  fingerprintVault,
+  fingerprintAlertmanager,
+  fingerprintDockerEngine,
   httpGet,
   httpPost,
 } from "./fingerprint.js";
@@ -116,6 +119,9 @@ export const WELL_KNOWN_PORTS = {
   solr: [8983],
   rabbitmq: [15672],
   kubernetes: [6443],
+  vault: [8200],
+  alertmanager: [9093],
+  docker: [2375],
 } as const;
 
 export interface ScanOptions {
@@ -250,6 +256,11 @@ const ALL_PROTOCOLS = [
   "rabbitmq",
   "kubernetes",
   "k8s",
+  "vault",
+  "openbao",
+  "alertmanager",
+  "docker",
+  "podman",
 ];
 
 export async function scanHost(opts: ScanOptions): Promise<DiscoveryCandidate[]> {
@@ -589,6 +600,21 @@ export async function scanHost(opts: ScanOptions): Promise<DiscoveryCandidate[]>
   if (wanted.has("kubernetes") || wanted.has("k8s")) {
     for (const port of protoPort(WELL_KNOWN_PORTS.kubernetes)) {
       jobs.push(t.kubernetes(opts.host, port, timeoutMs, t.httpGet));
+    }
+  }
+  if (wanted.has("vault") || wanted.has("openbao")) {
+    for (const port of protoPort(WELL_KNOWN_PORTS.vault)) {
+      jobs.push(fingerprintVault(opts.host, port, timeoutMs, t.httpGet));
+    }
+  }
+  if (wanted.has("alertmanager")) {
+    for (const port of protoPort(WELL_KNOWN_PORTS.alertmanager)) {
+      jobs.push(fingerprintAlertmanager(opts.host, port, timeoutMs, t.httpGet));
+    }
+  }
+  if (wanted.has("docker") || wanted.has("podman")) {
+    for (const port of protoPort(WELL_KNOWN_PORTS.docker)) {
+      jobs.push(fingerprintDockerEngine(opts.host, port, timeoutMs, t.httpGet));
     }
   }
 

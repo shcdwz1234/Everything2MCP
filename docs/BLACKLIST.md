@@ -4,7 +4,7 @@
 
 默认行为：**阻止新建与发现一键添加**；已经挂上的适配器实例**不会卸载**，但 `invoke` 也会被拒绝（更安全）。解除拉黑后可以再注册、再调用。
 
-**Full 模式仍执行黑名单**（`builtin-blacklist.bypassInFullControl=false`）。Agent `tools/list` / 默认 `mcp_list` 看不到已拉黑业务 tools；控制台可见。Agent 不能靠 `audience=console` 升级（[ADR 0002](adr/0002-actor-bound-audience.md)）。
+**Full 模式仍执行黑名单**（`builtin-blacklist.bypassInFullControl=false`）。`capability_register` / `mcp_add` / 发现一键注册走同一匹配。Agent `tools/list` / 默认 `mcp_list` 看不到已拉黑业务 tools；控制台可见。Agent 不能靠 `audience=console` 升级（[ADR 0002](adr/0002-actor-bound-audience.md)）。
 
 没有 CIDR / 网段扫描。黑名单按**单个** `protocol + host + port`（或规范化 url）精确匹配。
 
@@ -12,7 +12,7 @@
 
 1. **protocol** 走 `canonicalProtocol`（`pg` → `postgres`，`enip` → `ethernetip`，`http` → `openapi`，…）。
 2. **host** 小写；去掉 IPv6 方括号与尾随点。
-3. **port** 是数字。来源依次是：显式 `port`、URL 端口、`brokers[0]`、协议默认端口（MQTT 1883、Redis 6379、Solr **8983**、RabbitMQ management **15672**、Kubernetes **6443**、Cassandra 9042、Whois 43、…；见 `src/catalog/blacklist.ts` `DEFAULT_PORT`）。Neo4j 默认端口在代码里是 **7687**（Bolt 惯例）；HTTP 适配器常用 **7474**，拉黑 HTTP 目标请写显式 port 或 url。
+3. **port** 是数字。来源依次是：显式 `port`、URL 端口、`brokers[0]`、协议默认端口（MQTT 1883、Redis 6379、Solr **8983**、RabbitMQ management **15672**、Kubernetes **6443**、Docker/Podman **2375**、SMB **445**、NFS **2049**、Vault/OpenBao **8200**、Alertmanager **9093**、Pub/Sub emulator **8085**、Jira **8080**、OpenSearch **9200**、Cassandra 9042、Whois 43、…；见 `src/catalog/blacklist.ts` `DEFAULT_PORT`）。Neo4j 默认端口在代码里是 **7687**（Bolt 惯例）；HTTP 适配器常用 **7474**，拉黑 HTTP 目标请写显式 port 或 url。
 4. 能抽出 `host` + `port` 时，匹配键是：
 
    ```
@@ -37,11 +37,12 @@
 | 入口 | 行为 |
 | --- | --- |
 | `mcp_add` / `mcp_update` / POST `/api/adapters` | 匹配则 `E_BLACKLISTED`（HTTP 403） |
+| `capability_register` / POST `/api/capabilities/register` | 同上（走同一 `add()` + Policy Gateway；`auto:true` 也不能绕过） |
 | `mcp_add_from_discovery` / POST `/api/discovery/register` | 同上（走同一 `add`） |
 | `schema_import` 并注册 | 同上 |
 | `discovery_scan_host` / `discovery_probe` / `discovery_suggest` | 候选带 `blacklisted` + `blacklistId`；**suggestions 省略**它们；`blocked` / `hiddenBlacklisted` 列出被过滤条数 |
 | 已挂载适配器 `invoke` | 匹配则 `E_BLACKLISTED`，不打后端 |
-| `mcp_remove` | 不受影响（可以删掉已挂实例） |
+| `mcp_remove` | 不受影响（可以删掉已挂实例）。`capability_unregister` 同一路径；黑名单仍拦再注册 |
 
 控制台 Discovery 结果行可以「加入黑名单」；已拉黑行标记且没有一键注册按钮。`#/blacklist` 列表 + 解除拉黑。
 

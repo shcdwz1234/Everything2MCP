@@ -57,6 +57,8 @@ describe("P1 elasticsearch / opensearch", () => {
         hits: { total: number };
       };
       assert.equal(hit.hits.total, 1);
+      const health = (await adapter.invoke("cluster_health", {})) as { status: string };
+      assert.equal(health.status, "green");
     } finally {
       await adapter.disconnect();
       await loop.close();

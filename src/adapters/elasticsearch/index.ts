@@ -17,6 +17,7 @@ export interface ElasticsearchHandle {
   describe(index: string): Promise<{ index: string; count: number; fields: string[] }>;
   search(index: string, query: Record<string, unknown>, size: number): Promise<EsHit[]>;
   indexDoc(index: string, id: string | undefined, body: Record<string, unknown>): Promise<{ _id: string }>;
+  clusterHealth(): Promise<{ status: string; cluster_name: string }>;
   close(): Promise<void>;
 }
 
@@ -58,6 +59,9 @@ export function createMemoryElasticsearch(): ElasticsearchHandle {
       else list.push(hit);
       indices.set(index, list);
       return { _id };
+    },
+    async clusterHealth() {
+      return { status: "green", cluster_name: "e2mcp-sim" };
     },
     async close() {
       indices.clear();
@@ -118,6 +122,13 @@ async function httpElasticsearch(base: string, timeoutMs: number): Promise<Elast
       const json = await request(id ? "PUT" : "POST", path, body);
       return { _id: String(json._id ?? id ?? "") };
     },
+    async clusterHealth() {
+      const json = await request("GET", "/_cluster/health");
+      return {
+        status: String(json.status ?? "unknown"),
+        cluster_name: String(json.cluster_name ?? ""),
+      };
+    },
     async close() {
       /* stateless */
     },
@@ -145,6 +156,10 @@ export async function listenElasticsearchLoopback(mem: ElasticsearchHandle = cre
         try {
           if (req.method === "GET" && path === "/") {
             res.end(JSON.stringify({ name: "e2mcp", tagline: "You Know, for Search", version: { number: "8.0.0-e2mcp" } }));
+            return;
+          }
+          if (req.method === "GET" && path === "/_cluster/health") {
+            res.end(JSON.stringify(await mem.clusterHealth()));
             return;
           }
           if (req.method === "GET" && path.startsWith("/_cat/indices")) {
@@ -265,6 +280,12 @@ export class ElasticsearchAdapter implements ProtocolAdapter {
           additionalProperties: false,
         },
       },
+      {
+        name: "cluster_health",
+        description: "GET /_cluster/health (OpenSearch compatible)",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true },
+      },
     ];
   }
 
@@ -293,6 +314,7 @@ export class ElasticsearchAdapter implements ProtocolAdapter {
       const id = typeof args.id === "string" ? args.id : undefined;
       return handle.indexDoc(requiredString(args, "index"), id, document);
     }
+    if (toolName === "cluster_health") return handle.clusterHealth();
     throw new AdapterError("E_UNKNOWN_TOOL", `Unknown ${this.protocol} tool "${toolName}"`, { protocol: this.protocol });
   }
 

@@ -1,11 +1,11 @@
 # Roadmap — 按阶段顺序推进
 
-**当前状态：Phase U 已落地并勾完。下一阶段等用户明确 continue，不自动开新协议 / 不重开安全决策。**
+**当前状态：Phase X（Partner 热集成 + Compat Catalog + native 应用适配器）已落地。** 南向不是 MCP-by-default。下一阶段等用户明确 continue。不重开安全决策。
 
 产品目标：把尽可能多的协议变成 MCP tools，并让 Agent **自动发现、建议、一键注册**。  
 约束（全程有效）：**默认禁止网段 / CIDR 扫描**；**SSRF 拦截云 metadata / link-local**；数据面 **默认 `allowWrite=false`（只读）**；**Full 仍执行黑名单**；**Full ≠ 全局写**；无 shim；transport 合同不变。
 
-P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）。未完成上一阶段验收项时，**不跳阶段、不堆无关协议**。测试与功能并行：每个引擎至少 `config validation` + `success` + `failure`（含 `allowWrite=false`）。当前测试基线见 [RELEASE_NOTES.md](RELEASE_NOTES.md) / [AUDIT.md](AUDIT.md)（Phase U：**110 suites / 477 tests**）。
+P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）。未完成上一阶段验收项时，**不跳阶段、不堆无关协议**。测试与功能并行：每个引擎至少 `config validation` + `success` + `failure`（含 `allowWrite=false`）。当前测试基线见 [RELEASE_NOTES.md](RELEASE_NOTES.md) / [AUDIT.md](AUDIT.md)（Phase X：**133 suites / 545 tests**）。
 
 ---
 
@@ -310,9 +310,40 @@ P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）�
 - [x] 指纹 8983 / 15672 / 6443 + plan_bridge `allowWrite=false`；控制台矩阵对齐
 - [x] 未再试 Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 / Agent challenge / NFS / mDNS 组播
 
+## Phase V — 最小核心 + 热加载 + 环境/平台
+
+- [x] V0 文档：平面 vs 五包；最小核心；热加载状态机；非目标
+- [x] V1 Capability Lifecycle：`catalog/lifecycle.ts`；`capability_register/unregister/configure`；控制台 `#/capabilities` 热加载+热卸载；与 `mcp_add`/`mcp_remove` 同一 Policy Gateway；auto 仅 Safe+readonly+非黑名单；boot 不批量注册；unregister 不要求 allowWrite
+- [x] V2 `environment_inventory` 按需盘点（OS/权限/监听端口/运行时/容器/配置路径）；只产出 suggest
+- [x] V3 平台只读：`os_info` `platform_fs` `platform_process` `platform_service`（Win+Linux 代码路径；macOS best-effort；缺工具 `E_UNSUPPORTED`）
+- [x] V4 Docker Engine HTTP 只读 + journal 文件读（跳过 SMB/CIFS、Kafka EOS、NFS、LDAP GSSAPI）
+- [x] V5 `allowWrite` / `allowShell` 闸；`shell_exec` / `docker run` 仍是 stub，不全局打开写
+- [x] 未再试 Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 / Agent challenge / mDNS 组播
+
+## Phase W — 能力积压 P1–P5（热加载，不在 boot 挂载）
+
+- [x] P1 Docker/Podman `logs`；SMB2 NEGOTIATE MVP；journal export / Event XML；k8s `logs`；port/package/cloud suggest 质量
+- [x] P2 Vault/OpenBao health+list keys（`allowReadSecrets` 默认关）；`aws_iam` 模拟器；IMDS 线索不取 169.254.169.254、suggest 不含密钥
+- [x] P3 NFSv3 NULL ping + simulator exports；Kafka 仍是 one-shot `group_status`（**跳过真 EOS**）；SQS 已有；OpenSearch `cluster_health`；Alertmanager；Pub/Sub emulator
+- [x] P4 Jira REST 只读；`browser` 头less stub（`allowDesktop` 默认关，打开也不启 Chrome）
+- [x] P5 `allowWrite` / `allowShell` / `allowDesktop` 闸；扫描/suggest **从不**自动打开
+- [x] 热卸载一等公民：`unregister` hook + 审计；控制台 `#/capabilities` 热卸载（confirm）；Agent `capability_unregister`；缺 id `E_NOT_FOUND`；可再热加载
+- [x] 未再试 Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 / Agent challenge / mDNS 组播 / 完整 CIFS TREE_CONNECT / 真 journalctl/wevtutil
+
+## Phase X — Partner 热集成 + Compat（已落地）
+
+- [x] Partner protocol v1：Manifest JSON Schema、REST register/unregister/heartbeat、drops、Catalog `partner.{id}.{op}`
+- [x] Demo `examples/partner-demo-chat/`（非 MCP）
+- [x] SDK `sdk/partner`（Node）+ Python stub
+- [x] 控制台 `#/partner`、ingress 徽章、本地 token
+- [x] Compat Catalog + `compat_scan`（P0–P4；mcpServers = 兜底）
+- [x] Native：feishu / dingtalk / wecom / slack / notion / github（sim + allowWrite 闸）
+- [x] `mcp_bridge` 兜底（prefixed tools；live spawn `E_UNSUPPORTED`）
+- [x] 个人微信 / 支付 / 个人 QQ：诚实非宣称
+
 ## 当前停点
 
-**Phase U 已落地。** 下一阶段 **pending user continue**。不要自动开 Phase V / 不要重开 CIDR、`ALLOW_SCAN`、shim、全局写、Agent challenge、v2/v3 外部插件。
+**Phase X 已落地。** 下一阶段 **pending user continue**。不要自动开下一协议宇宙 / 不要重开 CIDR、`ALLOW_SCAN`、shim、全局写、Agent challenge、v2/v3 外部插件、部署时 bulk-register。不要把南向默认改成 MCP。
 
 ## 明确不会做
 
@@ -326,5 +357,8 @@ P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）�
 - LDAP GSSAPI
 - v2 本地 JS / v3 npm 外部安全模块真加载
 - MCP Agent 写 challenge
-- NFS 适配器
+- NFS **完整**客户端 / multicast SHOWMOUNT（NULL ping + simulator 已有）
 - mDNS 组播浏览（单播 5353 已有）
+- 部署时 bulk-register / 静默全局写 / 默认桌面控制
+- `allowShell` 真 shell / `allowDesktop` 真浏览器
+- SMB/CIFS **完整** TREE_CONNECT 文件客户端（NEGOTIATE + simulator 已有）

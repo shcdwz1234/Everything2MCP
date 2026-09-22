@@ -1,12 +1,12 @@
 # 协议目录与优先级
 
-**当前快照：Phase U。** Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。状态分三档：
+**当前快照：Phase X。** Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。南向默认不是 MCP（Partner / native / mcp_bridge 兜底）。状态分三档：
 
 - **Implemented** — 可用，有真实客户端路径 + hermetic 测试
 - **Thin** — 已注册，`listTools`/`invoke` 可用；能力故意收窄（模拟器、编码器或有限操作），文档写明限制
 - **Planned leftover** — 尚未做适配器，或明确跳过（见文末）
 
-`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 核心项已验收；随后 Phase F–U 已落地。stdio 默认，HTTP/SSE 可选，控制台 `/ui`）。下一阶段等用户 continue。
+`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 核心项已验收；随后 Phase F–V 已落地。stdio 默认，HTTP/SSE 可选，控制台 `/ui`）。部署不批量注册。下一阶段等用户 continue。
 
 ## 总表（按面分组）
 
@@ -61,7 +61,34 @@
 | WebSocket | `websocket`（`ws`） | Implemented | send / receive_once | 无重连 |
 | AMQP / Kafka / NATS / SQS / Pulsar | `amqp` `kafka` `nats` `sqs` `pulsar` | Implemented / Thin | 见下 | NATS JetStream consumer/ack/interest 内存子集；AMQP get/ack/nack；SQS unsigned JSON；Pulsar 默认官方 PulsarApi 子集，`dialect: e2p1` 为旧方言 |
 | RabbitMQ management | `rabbitmq` | Thin | `list_queues` `list_exchanges` `publish` `get` | HTTP `/api/*`（**15672**）；**不是** AMQP 0-9-1（线协议仍 `amqp` :5672） |
-| Kubernetes | `kubernetes`（`k8s`） | Thin | list/get pods/services/configmaps | 只读；`exec`/`apply` 恒 `E_UNSUPPORTED`；无 watch / 无 CRD |
+| Kubernetes | `kubernetes`（`k8s`） | Thin | list/get pods/services/configmaps + **logs** | 只读；`exec`/`apply` 恒 `E_UNSUPPORTED`；无 watch / 无 CRD |
+| OS info | `os_info` | Implemented | `uname` | 本机只读；热加载 |
+| Platform FS | `platform_fs` | Thin | `list` `read` `roots` | 闸根目录；Win+Linux 默认根；不可 allowWrite |
+| Platform process | `platform_process` | Thin | `process_list` `shell_exec` | Linux `/proc`；其它 OS 需注入或 gap；shell_exec 闸+stub |
+| Platform service | `platform_service` | Thin | `service_list` | systemd/sc/launchctl；缺工具不装成功 |
+| Docker Engine | `docker`（`podman`） | Thin | `list_containers` `inspect` `list_images` `logs` `run` | HTTP/simulator；`run` 恒 `E_UNSUPPORTED` |
+| Journal / Event Log | `journal` | Thin | `read` | syslog / journal-export / Event XML；wevtutil/journalctl stub |
+| SMB / CIFS | `smb`（`cifs`） | Thin | `list` `get` `negotiate` | 模拟器文件；live 仅 SMB2 NEGOTIATE |
+| NFS | `nfs` | Thin | `ping` `list_exports` | NFSv3 NULL；live SHOWMOUNT `E_UNSUPPORTED` |
+| Vault / OpenBao | `vault`（`openbao`） | Thin | `health` `list_mounts` `list_keys` `read_secret` | 密钥名可列；`read_secret` 要 `allowReadSecrets` |
+| AWS IAM | `aws_iam` | Thin | `caller_identity` `list_roles` | 模拟器；永不打 IMDS |
+| Alertmanager | `alertmanager` | Thin | `status` `alerts` `silences` `create_silence` | 写闸 |
+| Pub/Sub | `pubsub` | Thin | `list_topics` `pull` `publish` | 模拟器 / emulator HTTP；publish 写闸 |
+| Jira | `jira` | Thin | `myself` `search` `get_issue` | REST 只读 |
+| Headless browser | `browser` | Thin | `navigate` `snapshot` | `allowDesktop` 默认关；打开也不启 Chrome |
+
+### Partner / Compat native（Phase X）
+
+| 协议 | id | 状态 | tools | 限制 |
+| --- | --- | --- | --- | --- |
+| Partner | `partner` | Implemented | 清单 operations | 应用不实现 MCP；IPC invoke `E_UNSUPPORTED` |
+| Feishu/Lark | `feishu` | Thin | `list_chats` `search_messages` `send_message` | 写闸；sim + HTTP |
+| DingTalk | `dingtalk` | Thin | `probe` `send_work_notice` `send_robot` | 写闸 |
+| WeCom | `wecom` | Thin | `list_departments` `list_users` `send_app_message` | 不是个人微信 |
+| Slack | `slack` | Thin | `conversations_list` `post_message` | 写闸 |
+| Notion | `notion` | Thin | `search` `get_page` `create_page` | 写闸 |
+| GitHub | `github` | Thin | `list_issues` `list_pulls` `create_issue` | 写闸；永不打 IMDS |
+| MCP bridge | `mcp_bridge` | Thin | `{child}_describe` `{child}_ping` | 兜底；live spawn `E_UNSUPPORTED` |
 | OPC-UA | `opcua` | Thin | read/write/browse/`subscribe_once`/`wait_data_change` | CI simulator；`subscribe_once` 一次性；`wait_data_change` 为内存 monitored-item |
 | Modbus / CoAP / FIX / BACnet | `modbus` `coap` `fix` `bacnet` | Thin / Implemented | 见下 | CoAP 有 Observe；FIX 内存 session；BACnet/IP unicast Who-Is |
 | EtherNet/IP | `ethernetip`（`enip`） | Thin | `list_identities` `list_tags` `read_tag` `write_tag` | CIP List Identity；本地 tag 表；无 Forward Open / Class 1 |
@@ -85,7 +112,7 @@
 
 `discovery_scan_host` 会指纹常见 DB 端口（5432/3306/1433/27017/9200/8123/7687/7474/6333/6379/**9042 Cassandra**/**5984 CouchDB**/**8983 Solr**）、MinIO **9000** / Prometheus **9090** / GCS **4443** / Influx **8086**、OSS HTTP 头（`x-oss-request-id`）、Pulsar **8080 admin / 6650 TCP**、**RabbitMQ management 15672**（与 AMQP **5672** 分开）、**Kubernetes 6443** `/version`、BACnet/IP **47808 单播 Who-Is**、EtherNet/IP **44818 List Identity**、S7 **102 COTP CC**、MTConnect **5000/80 /probe**、**FTP 21** / **SFTP 22 SSH-2** / **TFTP 69** / **Memcached 11211** / **SNMP 161** / **etcd 2379** / **IMAP 143** / **POP3 110** / **Consul 8500** / **Azure Blob 10000** / **SSDP 单播 1900** / **DNS-SD 单播 5353** / **DNS 单播 53** / **Whois 43** / **CalDAV/CardDAV 5232 OPTIONS** / **Beanstalkd 11300** / **ZooKeeper 2181 ruok** / WebDAV `OPTIONS`，**不做网段扫、不发 BACnet 广播、不发 SSDP/mDNS 组播**。
 
-管理工具：`mcp_list` / `mcp_add` / `mcp_update` / `mcp_remove` / `mcp_query_by_protocol` / `mcp_health` / `mcp_explain_tool` / `mcp_plan_bridge` / `mcp_add_from_discovery` / `schema_import` / `discovery_*`。业务 tool 全名：`{protocol}.{name}.{op}`。
+管理工具：`mcp_list` / `mcp_add` / `mcp_update` / `mcp_remove` / `capability_register` / `capability_unregister` / `mcp_query_by_protocol` / `mcp_health` / `mcp_explain_tool` / `mcp_plan_bridge` / `mcp_add_from_discovery` / `schema_import` / `discovery_*`。业务 tool 全名：`{protocol}.{name}.{op}`。热卸载与热加载同一 Catalog，不要求 allowWrite。
 
 默认 **禁止网段扫描**；`mcp_add` 配置走 SSRF 防护（metadata / link-local）。
 
@@ -597,19 +624,110 @@ Tools 与 S3 相同：`list` `get` `put` `delete`。`unsigned: true` 走 GCS JSO
 { "url": "http://127.0.0.1:6443", "namespace": "default" }
 ```
 
-`list_pods` / `get_pod` / `list_services` / `get_service` / `list_configmaps` / `get_configmap`。`exec` / `apply` **恒** `E_UNSUPPORTED`（不是写闸可开）。别名 `k8s`。无 watch / 无 CRD。
+`list_pods` / `get_pod` / `list_services` / `get_service` / `list_configmaps` / `get_configmap` / **`logs`**（`tailLines` 快照，不是 follow）。`exec` / `apply` **恒** `E_UNSUPPORTED`（不是写闸可开）。别名 `k8s`。无 watch / 无 CRD。
+
+## 平台只读（热加载，不在 boot 挂载）
+
+工厂在 boot 注册，**catalog 默认空**。必须经 `capability_register` / `#/capabilities` / `mcp_add` 才变成业务 tools。
+
+### `os_info`
+
+```json
+{ "allowWrite": false }
+```
+
+`uname`：platform / arch / type / release / hostname / Node。只读。
+
+### `platform_fs`
+
+```json
+{ "allowWrite": false, "roots": ["/etc", "/usr/share"] }
+```
+
+`list` / `read` / `roots`。默认根 Linux `/etc` `/usr/share` `/var/log` `/proc`；Windows `C:\Windows\System32\drivers\etc`；macOS 无 `/proc`。路径逃逸拒绝。`allowWrite:true` 在 connect 即 `E_UNSUPPORTED`。
+
+### `platform_process`
+
+```json
+{ "allowWrite": false, "allowShell": false }
+```
+
+Linux `process_list` 读 `/proc`。Windows/macOS 无注入 `listFn` 时返回 `gap`，不装成功。`shell_exec` 先过 `allowShell` 闸，即使打开也 **恒** `E_UNSUPPORTED`（V5 stub）。
+
+### `platform_service`
+
+systemd `list-units` / Windows `sc query` / macOS `launchctl` best-effort。缺命令 → `E_UNSUPPORTED`，不假装有服务表。
+
+### Docker Engine（Thin — HTTP / simulator）
+
+```json
+{ "url": "http://127.0.0.1:2375", "allowWrite": false }
+```
+
+或 `simulator:true`。`list_containers` / `inspect` / `list_images` / **`logs`** 只读。`run` **恒** `E_UNSUPPORTED`（不是 `allowWrite` 可开）。别名 `podman`（同一 docker-compat API）。unix socket HTTP 未捆绑。
+
+### Journal / Event Log（Thin — 文件 / simulator）
+
+```json
+{ "path": "/var/log/syslog", "allowWrite": false, "allowShell": false }
+```
+
+读 syslog、**systemd journal export**（`MESSAGE=` 块）或 **Windows Event XML** 导出。`journalctl` / `wevtutil` 不在 v1 真执行。`allowShell` 不能打开 shell。
+
+### SMB / CIFS（Thin — negotiate MVP）
+
+```json
+{ "simulator": true }
+```
+
+或 `{ "host": "127.0.0.1", "port": 445 }`。模拟器 `list`/`get`。live 只做 **SMB2 NEGOTIATE**（方言）；TREE_CONNECT / 列目录 **恒** `E_UNSUPPORTED`。别名 `cifs`。
+
+### NFS（Thin — NULL ping）
+
+```json
+{ "simulator": true }
+```
+
+或 `{ "host": "127.0.0.1", "port": 2049 }`。模拟器 `list_exports`。live 只做 **NFSv3 ONC RPC NULL**。SHOWMOUNT / 文件 IO **恒** `E_UNSUPPORTED`。无组播。
+
+### Vault / OpenBao
+
+```json
+{ "url": "http://127.0.0.1:8200", "allowReadSecrets": false }
+```
+
+`health` / `list_mounts` / `list_keys` 不含 secret 值。`read_secret` 要显式 `allowReadSecrets=true`（inventory/suggest **从不**打开）。别名 `openbao`。Token 不进 suggest。
+
+### `aws_iam`
+
+```json
+{ "simulator": true }
+```
+
+`caller_identity` / `list_roles` 模拟器。`live:true` → `E_UNSUPPORTED`。**永不请求 169.254.169.254**。
+
+### Alertmanager / Pub/Sub / Jira / browser
+
+Alertmanager：`status`/`alerts`/`silences` 只读；`create_silence` 写闸。  
+Pub/Sub：emulator HTTP 或模拟器；`publish` 写闸。  
+Jira：`myself`/`search`/`get_issue` 只读。  
+`browser`：`allowDesktop` 默认 `false`；即使 true 也不启动 Chrome/Playwright。
 
 ## Planned leftover / 有意跳过
 
-**没有适配器、不要在文档里假装有客户端：**
+**没有完整客户端、不要在文档里假装有：**
 
-- **NFS**
+- NFS **完整** mount / SHOWMOUNT / 文件 IO
 - mDNS **组播浏览**（单播 5353 已有）
+- SMB/CIFS **TREE_CONNECT** 文件客户端
+- `allowShell` / `allowDesktop` 真执行
+- 部署时 bulk-register
 - Kafka cooperative rebalance / **真**事务协调器 / EOS（hermetic ≠ 集群）
 - SQL CI 真 Postgres/MySQL Docker 镜像（本环境无 Docker）
 - LDAP **GSSAPI**
 - 安全平面 **v2 本地 JS / v3 npm** 真加载
 - MCP **Agent 写 challenge**
+- Slack webhook（本波选了 Jira 只读）
 - Neo4j **完整 Bolt**（HTTP transactional 已有）
 - gRPC remount 失败后的自动 `mcp_update`
 - SMTP 同 socket 真 TLS 握手（广告/拒绝已测）

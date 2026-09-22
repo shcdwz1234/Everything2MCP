@@ -1,0 +1,5 @@
+{
+  "protocol": "vault",
+  "name": "local",
+  "config": { "simulator": true, "allowWrite": false, "allowReadSecrets": false }
+}

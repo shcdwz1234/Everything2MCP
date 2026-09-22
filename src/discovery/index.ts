@@ -18,5 +18,10 @@ export { importSchema, detectKind, IMPORT_FIRST_KINDS, baseUrlFromOpenApi } from
 export type { ImportedSchema, SchemaKind } from "./import.js";
 export { scanHost, WELL_KNOWN_PORTS } from "./scan.js";
 export type { ScanOptions, ScanTransports } from "./scan.js";
-export { planBridge } from "./plan.js";
-export type { BridgePlan } from "./plan.js";
+export { collectEnvironmentInventory, parseProcNet, parseProcAddr } from "./environment.js";
+export type { EnvironmentInventory, InventoryOptions } from "./environment.js";
+export { suggestFromEnvironment } from "./environment-suggest.js";
+export type { EnvironmentSuggestion } from "./environment-suggest.js";
+export { scanCompat, defaultDropsDir } from "./compat.js";
+export type { CompatScanResult, CompatSuggestion } from "./compat.js";
+export { COMPAT_CATALOG } from "./compat-catalog.js";

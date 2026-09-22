@@ -6,6 +6,7 @@ export type SecurityHook =
   | "auth"
   | "discover"
   | "register"
+  | "unregister"
   | "invoke"
   | "import"
   | "list"

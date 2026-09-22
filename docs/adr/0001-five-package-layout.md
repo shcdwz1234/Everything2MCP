@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-> Historical decision (layout cutover). Later phases kept this layout. **Phase U is current.** Feature work that this ADR deferred (AsyncAPI, Sparkplug, autonomy tools) **has since shipped**; do not read the Consequences bullet as a live backlog.
+> Historical decision (layout cutover). Later phases kept this layout. **Phase X is current.** Logical planes overlay these five directories — there is still no sixth package. Partner protocol and Compat live in Control + Catalog + Discovery + adapters.
 
 ## Context
 
@@ -17,9 +17,9 @@ Split the process into five packages (directories), plus a shared runtime kernel
 | Package | Responsibility |
 | --- | --- |
 | `src/transport/` | stdio (default); Streamable HTTP + SSE. No business logic. |
-| `src/control/` | `mcp_*` / `discovery_probe` handlers and policy hooks |
-| `src/catalog/` | tool registry, JSON persistence, validation, `list_changed` |
-| `src/discovery/` | host probe; suggest; `schema_import`; SSDP unicast (mDNS multicast still off) |
+| `src/control/` | `mcp_*` / `discovery_*` / `capability_*` / `environment_inventory` handlers and policy hooks |
+| `src/catalog/` | tool registry, JSON persistence, validation, `list_changed`, Capability Lifecycle (`lifecycle.ts`) |
+| `src/discovery/` | host probe; suggest; `schema_import`; SSDP unicast (mDNS multicast still off); on-demand Environment inventory |
 | `src/adapters/` + `src/runtime/` | Adapter SPI + protocol implementations; runtime kernel |
 
 Dependency rules:
@@ -31,7 +31,7 @@ Dependency rules:
 - adapters must not import `control` or `transport`
 - runtime leaves must not import adapters; `runtime/bootstrap.ts` is the only runtime→adapters edge
 
-Adapter implementations stay in flat `src/adapters/<protocol>/` folders. `src/adapters/packs.ts` is an optional grouping overlay (`http`, `rpc`, `messaging`, `industrial`, `data`).
+Adapter implementations stay in flat `src/adapters/<protocol>/` folders. `src/adapters/packs.ts` is an optional grouping overlay (`http`, `rpc`, `messaging`, `industrial`, `data`, **`platform`**). Logical planes (Environment, Platform, Protocol, Capability Lifecycle, Policy) overlay these five packages — still no sixth package.
 
 Temporary shims `src/core/*` and `src/management/tools.ts` were removed after the import cutover.
 

@@ -2,7 +2,7 @@
 
 同进程管理台：HTTP 监听器在 MCP `/mcp` + SSE `/sse` 之外挂载 **`/ui` SPA** 与 **`/api/*` REST**。业务仍走 `callManagementTool` / `ToolRegistry`，没有第二份 catalog。
 
-**当前快照：Phase U。** 协议矩阵随 `knownProtocols()` 列出 Solr / RabbitMQ management / Kubernetes 等。没有 CIDR 输入。
+**当前快照：Phase X。** 协议矩阵含平台/docker + Partner/native SaaS。`#/capabilities` 热加载/热卸载。`#/partner` 伙伴连接、ingress 徽章、本地 token。部署不批量注册。没有 CIDR 输入。mcp_bridge 在 UI 标为兜底。
 
 ## 打开
 
@@ -39,7 +39,7 @@ npm run ui:build
 | 审计 | `#/audit` — invoke 成功/失败时间线（`dataDir/audit.jsonl` 持久化，重启可读） |
 | 黑名单 | `#/blacklist` — 列表 / 加入 / 解除；Discovery 结果可一键拉黑 |
 | 安全 | `#/security` — Safe/Full 热切换（二次确认）；模块表只读。Full 仍执行黑名单，**不会**全局打开 `allowWrite` |
-| 协议矩阵 | 只读协议目录 |
+| 热加载 | `#/capabilities` — 环境盘点建议 + 确认热加载；**热卸载**已挂能力（confirm；不要求 allowWrite） |
 | Settings | 进程配置只读（不回显 token） |
 
 写操作：UI 二次确认 + 请求体 `confirm:true`，**仍然**受适配器 `allowWrite` / `assertCanWrite` 闸。默认 `allowWrite=false`。切到 Full **只**跳过平面模块 `allow-write`（以及 `dangerous-tools` challenge / `rate-limit` stub），**不会**把现有适配器改成可写。
@@ -63,6 +63,11 @@ npm run ui:build
 | GET/DELETE | `/api/blacklist/:id` |
 | GET | `/api/security` `/api/security/mode` |
 | PUT | `/api/security/mode`（`{ mode, confirm:true }`） |
+| POST | `/api/environment/inventory` |
+| POST | `/api/capabilities/register`（`confirm:true` 或 Safe+readonly `auto:true`） |
+| POST | `/api/capabilities/unregister` `{ id, confirm:true }` |
+| DELETE | `/api/capabilities/:id?confirm=true`（与 POST unregister 同一管道） |
+| POST | `/api/capabilities/configure` `{ id, config }` |
 
 ## W3 页怎么打开
 
@@ -77,6 +82,7 @@ npm run ui:build
 | `#/import` | Schema 导入 |
 | `#/blacklist` | 黑名单（`GET/POST/DELETE /api/blacklist`） |
 | `#/security` | 安全平面（`GET/PUT /api/security`） |
+| `#/capabilities` | 热加载（`POST /api/environment/inventory`、`/api/capabilities/register`） |
 | `#/matrix` | 协议矩阵 |
 | `#/settings` | 只读设置 |
 

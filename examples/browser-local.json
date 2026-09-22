@@ -1,0 +1,5 @@
+{
+  "protocol": "browser",
+  "name": "local",
+  "config": { "allowDesktop": false }
+}

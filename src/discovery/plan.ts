@@ -377,6 +377,30 @@ const RULES: Array<{ protocol: string; re: RegExp; reason: string; config: (host
       config: (host) => ({ url: `http://${host ?? "127.0.0.1"}:6443`, namespace: "default" }),
     },
     {
+      protocol: "vault",
+      re: /\bvault\b|openbao/i,
+      reason: "Goal mentions Vault/OpenBao (keys only; no secrets in suggest)",
+      config: (host) => ({ url: `http://${host ?? "127.0.0.1"}:8200`, allowWrite: false, allowReadSecrets: false }),
+    },
+    {
+      protocol: "alertmanager",
+      re: /alertmanager|prometheus alert/i,
+      reason: "Goal mentions Alertmanager",
+      config: (host) => ({ url: `http://${host ?? "127.0.0.1"}:9093`, allowWrite: false }),
+    },
+    {
+      protocol: "docker",
+      re: /\bdocker engine\b|\bpodman\b/i,
+      reason: "Goal mentions Docker/Podman Engine API",
+      config: (host) => ({ url: `http://${host ?? "127.0.0.1"}:2375`, allowWrite: false }),
+    },
+    {
+      protocol: "jira",
+      re: /\bjira\b/i,
+      reason: "Goal mentions Jira REST read",
+      config: (host) => ({ url: `http://${host ?? "127.0.0.1"}:8080` }),
+    },
+    {
       protocol: "ftp",
       re: /\bftp\b|file transfer/i,
       reason: "Goal mentions FTP",

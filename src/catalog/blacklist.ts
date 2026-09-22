@@ -116,6 +116,17 @@ const DEFAULT_PORT: Record<string, number> = {
   rabbitmq: 15672,
   kubernetes: 6443,
   k8s: 6443,
+  docker: 2375,
+  podman: 2375,
+  smb: 445,
+  cifs: 445,
+  nfs: 2049,
+  vault: 8200,
+  openbao: 8200,
+  alertmanager: 9093,
+  pubsub: 8085,
+  jira: 8080,
+  opensearch: 9200,
   fix: 9876,
 };
 
@@ -172,7 +183,7 @@ function parseNetworkUrl(raw: string): { host: string; port: number; protocolHin
   }
 }
 
-const URL_KEYS = ["url", "endpoint", "serviceUrl", "brokerUrl", "baseUrl", "adminUrl", "wsdl", "spec"];
+const URL_KEYS = ["url", "endpoint", "serviceUrl", "brokerUrl", "baseUrl", "adminUrl", "wsdl", "spec", "invokeUrl"];
 
 export function targetFromConfig(protocol: string, config: JsonObject): BlacklistTarget | undefined {
   const canon = canonicalProtocol(protocol);

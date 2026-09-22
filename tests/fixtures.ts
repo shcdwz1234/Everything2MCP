@@ -49,7 +49,31 @@ export const EMPTY_OK = new Set([
   "solr",
   "rabbitmq",
   "kubernetes",
+  "kubernetes",
   "k8s",
+  "os_info",
+  "platform_fs",
+  "platform_process",
+  "platform_service",
+  "docker",
+  "journal",
+  "podman",
+  "smb",
+  "cifs",
+  "nfs",
+  "vault",
+  "openbao",
+  "aws_iam",
+  "alertmanager",
+  "pubsub",
+  "jira",
+  "browser",
+  "feishu",
+  "dingtalk",
+  "wecom",
+  "slack",
+  "notion",
+  "github",
 ]);
 
 export function validConfig(protocol: string): JsonObject {
@@ -126,6 +150,24 @@ export function validConfig(protocol: string): JsonObject {
       return { container: "data", simulator: true };
     case "mtconnect":
       return { xml: MTCONNECT_PROBE_XML };
+    case "partner":
+      return {
+        capability_id: "demo",
+        display_name: "Demo",
+        version: "1.0.0",
+        operations: [{ name: "ping", description: "readonly ping", risk: "readonly", inputSchema: { type: "object" } }],
+        invoke: { kind: "http", url: "http://127.0.0.1:9/invoke" },
+        simulator: true,
+      };
+    case "mcp_bridge":
+      return { mcpServers: { demo: { command: "node", args: ["-e", ""] } }, simulator: true };
+    case "feishu":
+    case "dingtalk":
+    case "wecom":
+    case "slack":
+    case "notion":
+    case "github":
+      return { simulator: true };
     default:
       return { simulator: true };
   }

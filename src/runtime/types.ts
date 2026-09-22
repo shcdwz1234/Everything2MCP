@@ -61,6 +61,8 @@ export interface AdapterHealth {
   detail?: string;
 }
 
+export type IngressKind = "partner" | "native" | "mcp_bridge";
+
 export interface AdapterSnapshot {
   id: string;
   name: string;
@@ -70,6 +72,8 @@ export interface AdapterSnapshot {
   health?: AdapterHealth;
   status: "live" | "restore_failed";
   error?: string;
+  /** Southbound ingress. Northbound Agent surface is always MCP. */
+  ingress?: IngressKind;
 }
 
 export interface DiscoveryCandidate {

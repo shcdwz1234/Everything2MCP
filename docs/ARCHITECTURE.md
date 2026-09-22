@@ -1,6 +1,6 @@
 # 架构 — Everything2MCP
 
-**当前快照：Phase U 已落地。** 单进程、五包分层。业务 tools 全部由适配器在运行时注册，MCP 工具名保持 `mcp_*` / `discovery_*` / `schema_import` 与 `{protocol}.{name}.{operation}`。下一阶段等用户 continue。
+**当前快照：Phase X（Partner + Compat）。** 单进程、五包分层。**部署 = 最小 MCP 核心**。北向 MCP only；南向 Partner → native → mcp_bridge 兜底。业务能力全部热加载。MCP 工具名保持 `mcp_*` / `discovery_*` / `capability_*` / `environment_*` / `partner_list` / `compat_scan` / `schema_import` 与 `{protocol}.{name}.{operation}`。
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -69,7 +69,7 @@ adapters   →  runtime 叶子模块（types / errors / auth / load）
 
 ## 2. control
 
-管理 MCP 工具（已全部挂上，不是 stub）：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`mcp_blacklist_*`、`schema_import`、`discovery_probe`、`discovery_scan_host`、`discovery_suggest`。
+管理 MCP 工具（已全部挂上，不是 stub）：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`mcp_blacklist_*`、`schema_import`、`discovery_probe`、`discovery_scan_host`、`discovery_suggest`、`environment_inventory`、`capability_register`、`capability_unregister`、`capability_configure`。
 
 - `server.ts`：ListTools / CallTool、`tools.listChanged`
 - `tools.ts`：管理工具 schema 与实现；`mcp_list` 的 `audience=console` **仅**当 actor 是 console 时生效（防 Agent 伪造，ADR 0002）
@@ -143,9 +143,10 @@ interface ProtocolAdapter {
 | --- | --- |
 | http | openapi, http, graphql, soap, webdav, caldav, carddav |
 | rpc | grpc, xmlrpc, jsonrpc |
-| messaging | mqtt, amqp, kafka, nats, websocket, ws, asyncapi, sparkplug, sqs, pulsar, imap, pop3, **rabbitmq（management HTTP，不是 AMQP）** |
+| messaging | mqtt, amqp, kafka, nats, websocket, ws, asyncapi, sparkplug, sqs, pulsar, imap, pop3, **rabbitmq**, **pubsub** |
 | industrial | opcua, modbus, coap, fix, bacnet, ethernetip, s7, mtconnect, snmp |
-| data | sqlite/postgres/mysql/…、mongodb、redis、elasticsearch/opensearch、clickhouse、neo4j、qdrant、s3/gcs/oss、influx、prometheus、smtp、ldap、ftp、etcd、consul、azureblob、sftp、memcached、tftp、beanstalkd、zookeeper、dns、cassandra、couchdb、whois、**solr**、**kubernetes / k8s** |
+| data | sqlite/postgres/mysql/…、mongodb、redis、elasticsearch/opensearch、clickhouse、neo4j、qdrant、s3/gcs/oss、influx、prometheus、**alertmanager**、smtp、ldap、ftp、etcd、consul、azureblob、sftp、memcached、tftp、beanstalkd、zookeeper、dns、cassandra、couchdb、whois、**solr**、**kubernetes / k8s**、**vault / openbao**、**aws_iam**、**jira** |
+| platform | **os_info**, **platform_fs**, **platform_process**, **platform_service**, **docker / podman**, **journal**, **smb / cifs**, **nfs**, **browser** |
 
 新增协议 = 实现 SPI + 一行 `registerAdapterFactory`。不要改 server 的业务 tool 列表。
 
@@ -158,6 +159,24 @@ interface ProtocolAdapter {
 | remove | disconnect → 删索引 → 删 store |
 
 不需要重启 Node 进程。MCP 客户端是否立刻刷新工具列表取决于它是否处理 `list_changed`；即使不处理，下一次 `tools/list` 也会是新集合。
+
+## 逻辑平面 vs 五包（Phase V 引入，Phase W 仍适用）
+
+平面是产品概念，**不是**第六个 npm/目录包：
+
+| 平面 | 落点 |
+| --- | --- |
+| Protocol | `src/adapters/<id>/` |
+| Environment | `src/discovery/environment.ts`（按需盘点 + 云线索，不是 boot hook；从不打 IMDS） |
+| Platform | `src/adapters/platform/*` + docker/podman/journal/smb/nfs/browser |
+| Capability Lifecycle / Hot-add / Hot-delete | `src/catalog/lifecycle.ts` + `ToolRegistry.add`/`remove` + `capability_*` |
+| Policy | `src/control/security/`（Safe/Full、黑名单、HMAC） |
+
+状态机：`draft/validated/suggested → denied | pending_confirm | auto_readonly → live → unregistered`。
+
+`auto:true` **仅** Safe + `allowWrite`/`allowShell`/`allowDesktop`/`allowReadSecrets` 非 true + 非黑名单。建议列表从不批量注册。控制台 REST 热加载 / **热卸载**都要 `confirm:true`（注册的 auto 例外）。Agent `capability_unregister` 与 `mcp_remove` 共用 `remove()`：Policy Gateway `unregister` hook、审计、立刻 `tools/list_changed`。卸载**不**要求 `allowWrite`；黑名单不拦卸载，拦再注册。
+
+非目标（本平面）：部署时 bulk register、静默全局写、默认桌面控制（控制台仍是可选 HTTP `/ui`）。
 
 ## 数据流（调用）
 
@@ -175,6 +194,8 @@ interface ProtocolAdapter {
 - 为每个协议都做完整实现（见 `PROTOCOLS.md` Implemented vs Thin）
 - Kafka 真 EOS / cooperative rebalance、SQL CI Docker 真库、LDAP GSSAPI
 - v2/v3 外部安全插件加载、Agent 写 challenge、NFS、mDNS 组播浏览
-- 重新引入 `src/core` / `src/management` shim
+- 部署时批量注册能力 / 默认打开桌面控制
+- `allowShell` 真执行命令 / `allowDesktop` 真浏览器（只有闸与 stub）
+- SMB/CIFS 完整 TREE_CONNECT 客户端；NFS 完整 mount/SHOWMOUNT
 
 AsyncAPI、Sparkplug、`mcp_plan_bridge` / `discovery_suggest` / `mcp_add_from_discovery` **已经落地**（早期 ADR 里「推迟」是历史，见 `docs/adr/0001-five-package-layout.md`）。

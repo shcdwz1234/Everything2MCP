@@ -2,7 +2,7 @@
 
 从空仓库做到可跑的协议→MCP 桥 + 同进程 Web 控制台。默认 **stdio MCP**；HTTP 时同一进程挂 `/mcp`、`/sse`、`/ui`、`/api`。
 
-**当前快照：Phase U 已落地。** 测试基线全量绿 **`110` suites / `477` tests**（Phase T 为 **106 / 467**）。下一阶段 **pending user continue**，不自动开新协议。本文件即变更记录（无单独 `CHANGELOG.md`）。
+**当前快照：Phase X（Partner + Compat）。** 测试全量绿 **`133` suites / `545` tests**。部署 = 最小 MCP 核心；能力靠热加载。南向 Partner → native → mcp_bridge 兜底。
 
 ## 如何启动
 
@@ -191,6 +191,28 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 - **Kubernetes** 只读 list/get；exec/apply `E_UNSUPPORTED`
 - 发现 8983 / 15672 / 6443 + plan_bridge 默认只读
 
+### Phase V
+
+- **最小核心部署**：空 catalog；不在 boot 批量注册平台/协议
+- **热加载管道**：`capability_register` / `unregister` / `configure` 与 `mcp_add` 同一 Policy Gateway
+- 控制台 `#/capabilities`：环境盘点 → 建议 → 确认；Safe+只读可 auto
+- **Environment inventory** 按需（OS/端口/运行时/容器）；从不自动写
+- **平台只读**：`os_info` `platform_fs` `platform_process` `platform_service`
+- **Docker** Engine HTTP 只读；**journal** 文件读；`allowShell`/`docker run`/`shell_exec` 为闸+stub
+- 测试 **115 / 494**
+
+### Phase W（V-backlog P1–P5）
+
+- Docker/Podman **logs**；k8s **logs**；journal **export / Event XML**
+- SMB2 **NEGOTIATE** MVP（live 文件操作为 `E_UNSUPPORTED`）；NFSv3 **NULL ping**
+- Vault/OpenBao health + list keys；`allowReadSecrets` 默认关；suggest 不含 token；`auto:true` 不能打开 secrets/write/shell/desktop
+- `aws_iam` 模拟器；**永不查询 IMDS**
+- Alertmanager 只读 + silence 写闸；Pub/Sub emulator；OpenSearch `cluster_health`
+- Jira REST 只读；`browser` stub（`allowDesktop` 默认关）
+- **热卸载**一等公民：`unregister` hook + 审计；控制台 `#/capabilities` 热卸载（confirm）；Agent `capability_unregister`；缺 id `E_NOT_FOUND`；可再热加载
+- Kafka **仍跳过真 EOS**（hermetic `group_status` 已有）
+- 测试 **124 / 522**
+
 ## 测试数（历史）
 
 | 里程碑 | suites | tests |
@@ -222,12 +244,23 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 | **Phase S nats js / amqp ack / opcua mon / graphql-ws / dns** | **102** | **454** |
 | **Phase T cassandra / couchdb / whois / neo4j HTTP / es HTTP** | **106** | **467** |
 | **Phase U solr / rabbitmq mgmt / kubernetes RO** | **110** | **477** |
+| **Phase V hot-add / env inventory / platform RO / docker+journal** | **115** | **494** |
+| **Phase W backlog P1–P5 (smb/nfs/vault/iam/am/pubsub/jira/browser)** | **124** | **522** |
+| **Phase X Partner + Compat + native apps + mcp_bridge** | **133** | **545** |
 
 复跑：`npm run build && npm test`。
+
+### Phase X — Partner + Compat
+
+- Partner protocol v1 + drops + `#/partner` + `sdk/partner` + `examples/partner-demo-chat/`
+- Native feishu/dingtalk/wecom/slack/notion/github（sim + 写闸）
+- `compat_scan` + Compat Catalog；`mcp_bridge` 兜底
+- 扫描成功 ≠ 打开写/桌面/密钥；write/desktop 不能 Safe-auto
 
 ## 本版明确没有
 
 - 默认网段 / CIDR 扫描、默认 `allowWrite=true`、`src/core` / `src/management` shim
+- 部署时 bulk-register、静默全局写、`allowShell`/`allowDesktop` 真执行、完整 CIFS TREE_CONNECT、完整 NFS 客户端
 - Kafka 完整 rebalance / 真事务协调器 / EOS（需真集群）
 - SQL CI 真 Postgres/MySQL 镜像（本环境无 Docker）
 - LDAP GSSAPI；安全平面 v2/v3 外部模块真加载；MCP Agent 写 challenge

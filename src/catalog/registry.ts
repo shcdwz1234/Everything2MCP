@@ -8,6 +8,7 @@ import type {
   McpToolSchema,
   RegistrationRecord,
 } from "../runtime/types.js";
+import { inferIngress } from "./ingress.js";
 import { assertNotBlacklisted, type BlacklistStore } from "./blacklist.js";
 import { JsonStore } from "./store.js";
 
@@ -49,6 +50,14 @@ export class ToolRegistry {
       }
     }
     this.emitChange();
+  }
+
+  async hotRegister(protocol: string, name: string, config: JsonObject): Promise<LiveInstance> {
+    return this.add(protocol, name, config);
+  }
+
+  async unregister(id: string): Promise<boolean> {
+    return this.remove(id);
   }
 
   async add(protocol: string, name: string, config: JsonObject): Promise<LiveInstance> {
@@ -117,6 +126,7 @@ export class ToolRegistry {
         toolCount: inst.tools.length,
         tools: inst.tools.map((t) => t.name),
         status: "live",
+        ingress: inferIngress(inst.record.protocol, inst.record.config),
       });
       for (const tool of inst.tools) {
         tools.push({ ...tool, adapterId: inst.record.id, protocol: inst.record.protocol });
@@ -131,6 +141,7 @@ export class ToolRegistry {
         tools: [],
         status: "restore_failed",
         error: fail.error,
+        ingress: inferIngress(fail.record.protocol, fail.record.config),
       });
     }
     adapters.sort((a, b) => a.id.localeCompare(b.id));

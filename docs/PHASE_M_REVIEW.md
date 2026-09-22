@@ -1,6 +1,6 @@
 # Phase M — 审查与设计补充
 
-> **历史纪要（Phase M）。** 当前产品已推进到 **Phase U**（Solr / RabbitMQ management / Kubernetes 只读）。本页只记录 M 当时的可证伪结论，不当成最新协议矩阵。最新状态见 [ROADMAP.md](ROADMAP.md)、[PROTOCOLS.md](PROTOCOLS.md)、[AUDIT.md](AUDIT.md)。
+> **历史纪要（Phase M）。** 当前产品已推进到 **Phase W**（热加载核心 + 能力积压 P1–P5）。本页只记录 M 当时的可证伪结论，不当成最新协议矩阵。最新状态见 [ROADMAP.md](ROADMAP.md)、[PROTOCOLS.md](PROTOCOLS.md)、[AUDIT.md](AUDIT.md)。
 
 对照 `ARCHITECTURE` / `SECURITY_ARCHITECTURE` / `AUDIT` / `PROTOCOLS` 的实现审查。只记**可证伪**结论。状态三档：**已实现** / **有意不做** / **需环境**。
 

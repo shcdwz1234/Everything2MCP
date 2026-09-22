@@ -1,6 +1,6 @@
 # 安全架构
 
-**当前快照：Phase U。** 下列锁定决策已经写进代码，文档不再把它们写成「建议 / 待决」。
+**当前快照：Phase X。** 热加载走 Policy Gateway。`auto:true` **不能**在 Full / 可写 / Partner `riskCeiling=write|desktop` / 黑名单时自动注册。扫描与 Compat **不**授予 write/desktop/secrets。个人微信私聊不是 Partner 兼容面。
 
 S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。Phase M 把 audience 绑到 actor。本文仍是实现合同；**S3/S4（外部 JS/npm）有意不做**（v1 builtins only）。不重开 CIDR UI / `ALLOW_SCAN` / shim / 全局写。
 
@@ -26,7 +26,7 @@ S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热
 | # | 决策 |
 | --- | --- |
 | L1 | **Full 仍执行黑名单。** 内置模块 id 建议 `builtin-blacklist`（下文亦写 `blacklist`）。`bypassInFullControl` **必须为 `false`**。`locked` 为 `false`：操作员可通过控制台管理条目，但不能靠切 Full 关掉评估。 |
-| L2 | **黑名单语义（Safe 与 Full 相同）：** ① 不能再 `mcp_add` / POST `/api/adapters` / 发现一键注册命中目标；② **不对 Agent 暴露**这些适配器的业务 tools：`tools/list` / `mcp_list` 过滤掉，`invoke` / `tools/call` deny（`E_BLACKLISTED`）；③ **控制台**可以列表、加入、解除拉黑（现有 `#/blacklist` 与 `mcp_blacklist_*` / `/api/blacklist`）。 |
+| L2 | **黑名单语义（Safe 与 Full 相同）：** ① 不能再 `mcp_add` / `capability_register` / POST `/api/adapters` / POST `/api/capabilities/register` / 发现一键注册命中目标；② **不对 Agent 暴露**这些适配器的业务 tools：`tools/list` / `mcp_list` 过滤掉，`invoke` / `tools/call` deny（`E_BLACKLISTED`）；③ **控制台**可以列表、加入、解除拉黑（现有 `#/blacklist` 与 `mcp_blacklist_*` / `/api/blacklist`）。 |
 | L3 | **插件 SPI 按可对外 inject / replace 设计。** v1 **只交付内置模块**；加载器与配置钩子（`inject` / `replace` / `remove` / `security.json` 的 `modules[]`）先留接口，拒绝非 builtin 源，不实现本地 JS / npm 执行。 |
 | L4 | **热加载优先：** 改 mode、inject/replace 模块、增删黑名单，均在下一跳 hook（及下一次 `tools/list`）生效，不重启进程。黑名单文件与内存 store 以热读为准。 |
 | L5 | **CIDR 永不放行**（两模式）。无网段 UI。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 不能重新打开。 |
@@ -70,6 +70,7 @@ Full **不是** root：不能关 Token、不能关审计、不能关 integrity�
 transport（token）     → hook: auth
 discovery_scan/probe   → hook: discover
 mcp_add / update       → hook: register
+mcp_remove / unregister → hook: unregister
 schema_import          → hook: import
 tools/list · mcp_list  → hook: list
 ToolRegistry.invoke    → hook: invoke
@@ -81,7 +82,8 @@ ToolRegistry.invoke    → hook: invoke
 | --- | --- | --- |
 | `auth` | HTTP/SSE `/api`、`/mcp`、`/sse` 在进业务前 | `src/transport/http.ts`：`EVERYTHING2MCP_HTTP_TOKEN`；`GET /health` 与静态 `/ui` 仍不鉴权 |
 | `discover` | `discovery_scan_host` / `discovery_probe` / `discovery_suggest`（先扫再建议时） | 平面 `assert` + `assertProbeTarget(host, false)` + SSRF；黑名单 `decorateCandidates` |
-| `register` | `mcp_add` / `mcp_update` / `mcp_add_from_discovery` / POST `/api/adapters` | 平面 `assert` + `assertConfigTargetsAllowed` + `assertNotBlacklisted` + `validateRegistration` |
+| `register` | `mcp_add` / `mcp_update` / `mcp_add_from_discovery` / `capability_register` / POST `/api/adapters` / POST `/api/capabilities/register` | 平面 `assert` + `assertConfigTargetsAllowed` + `assertNotBlacklisted` + `validateRegistration`。`auto:true` 额外要求 Safe + `allowWrite`/`allowShell`/`allowDesktop`/`allowReadSecrets` 非 true |
+| `unregister` | `mcp_remove` / `capability_unregister` / POST `/api/capabilities/unregister` / DELETE `/api/capabilities/:id` / DELETE `/api/adapters/:id` | 平面 `assert`（`core-audit` / `core-integrity` / `secret-redact`）。**不**跑黑名单 deny、**不**要求 `allowWrite`。控制台 REST 要 `confirm:true`。缺 id → `E_NOT_FOUND`。成功记审计 `kind=unregister` |
 | `import` | `schema_import` 解析与（可选）随后 `add` | 平面 `assert` + `discovery/import` 然后走同一 `register` |
 | `list` | MCP `tools/list`、`mcp_list`（默认 audience=`agent`） | `SecurityPlane.hideAgentTools`。操作员视图要求 `actor.kind=console`（REST 入口写入）。Agent 传 `audience: "console"` **无效**。`mcp_explain_tool` / `mcp_query_by_protocol` / `mcp_health` 对 Agent 同样藏名 |
 | `invoke` | 业务 `tools/call` 与 `POST /api/tools/:name/invoke` | 平面 `assert`（含 integrity + 黑名单）→ `ToolRegistry.invoke`（再拦黑名单）→ 适配器 `assertCanWrite` / RPC 写闸；控制台写还要 `confirm:true` |
@@ -118,6 +120,7 @@ export type SecurityHook =
   | "auth"
   | "discover"
   | "register"
+  | "unregister"
   | "invoke"
   | "import"
   | "list"
@@ -376,4 +379,4 @@ Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent �
 
 S1 包装时：`assertNotBlacklisted` 与 `decorateCandidates` 成为模块的 `evaluate`；并补 `list` 过滤。匹配规则与 `E_BLACKLISTED` 保持不变。
 
-**当前（Phase U）：** 安全平面合同仍是以上锁定决策。不重开 CIDR / `ALLOW_SCAN` / shim / 全局写 / Agent challenge / v2/v3 外部加载。
+**当前（Phase W）：** 安全平面合同仍是以上锁定决策。热加载不另开逃生口。不重开 CIDR / `ALLOW_SCAN` / shim / 全局写 / Agent challenge / v2/v3 外部加载。`allowDesktop` 与 `allowReadSecrets` 默认关，扫描从不打开。

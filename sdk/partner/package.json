@@ -1,0 +1,11 @@
+{
+  "name": "@everything2mcp/partner-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin Node SDK for the E2MCP Partner protocol. Apps do not implement MCP.",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  }
+}

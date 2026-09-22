@@ -50,6 +50,10 @@ describe("MCP server management tools", () => {
       "mcp_blacklist_list",
       "mcp_blacklist_add",
       "mcp_blacklist_remove",
+      "environment_inventory",
+      "capability_register",
+      "capability_unregister",
+      "capability_configure",
     ]) {
       assert.ok(names.includes(required), `missing ${required}`);
     }
@@ -82,6 +86,29 @@ describe("MCP server management tools", () => {
     await client.callTool({ name: "mcp_remove", arguments: { id: "openapi:widgets" } });
     const after = await client.listTools();
     assert.ok(!after.tools.some((t) => t.name.startsWith("openapi.widgets.")));
+  });
+
+  it("capability_unregister is the agent hot-delete path and drops tools without restart", async () => {
+    const added = JSON.parse(
+      textOf(
+        await client.callTool({
+          name: "capability_register",
+          arguments: { protocol: "os_info", name: "mcpdel", config: { allowWrite: false }, confirm: true },
+        }),
+      ),
+    );
+    assert.equal(added.id, "os_info:mcpdel");
+    const before = await client.listTools();
+    assert.ok(before.tools.some((t) => t.name === "os_info.mcpdel.uname"));
+
+    const gone = JSON.parse(
+      textOf(await client.callTool({ name: "capability_unregister", arguments: { id: "os_info:mcpdel" } })),
+    );
+    assert.equal(gone.ok, true);
+    assert.equal(gone.state, "unregistered");
+
+    const after = await client.listTools();
+    assert.ok(!after.tools.some((t) => t.name === "os_info.mcpdel.uname"));
   });
 
   it("plans, explains, health-checks, and schema_imports for agents", async () => {

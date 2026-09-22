@@ -1,6 +1,6 @@
 # Error codes
 
-Adapter and management tools return a stable JSON payload when a call fails. **Current snapshot: Phase U** (no new error codes; `E_BLACKLISTED` / `E_UNSUPPORTED` still cover skip/deny paths).
+Adapter and management tools return a stable JSON payload when a call fails. **Current snapshot: Phase X**（Partner unregister 缺 confirm = `E_INVALID_ARGUMENT`；缺 id = `E_NOT_FOUND`；Partner write/desktop Safe-auto = `E_UNSUPPORTED`；Partner token 错 = `E_AUTH`）。
 
 Adapter and management tools return a stable JSON payload when a call fails:
 
@@ -17,13 +17,13 @@ Adapter and management tools return a stable JSON payload when a call fails:
 | `E_INVALID_ARGUMENT` | Tool argument missing, wrong type, or unusable (also HTTP session start without `initialize`) |
 | `E_NOT_CONNECTED` | Tool name is not bound to a live adapter |
 | `E_UNKNOWN_TOOL` | No such MCP tool in the catalog |
-| `E_NOT_FOUND` | Unknown registration id, or unknown HTTP/SSE session |
+| `E_NOT_FOUND` | Unknown registration id（含 `capability_unregister` / `mcp_remove` 缺 id）, or unknown HTTP/SSE session |
 | `E_CONFLICT` | Registration id already exists |
 | `E_TIMEOUT` | Adapter invoke exceeded `config.timeoutMs` |
-| `E_AUTH` | Adapter credentials failed, or the HTTP transport token was missing/wrong |
-| `E_UNSUPPORTED` | Feature, live client library, or mode is not available |
+| `E_AUTH` | Adapter credentials failed, HTTP transport token, **or Partner token** missing/wrong |
+| `E_UNSUPPORTED` | Feature, live client library, or mode is not available（含 `capability_register auto:true` 在 Full / 可写 / `allowShell` / `allowDesktop` / `allowReadSecrets` / Partner `riskCeiling` write\|desktop / 黑名单时；`shell_exec`、`docker run`、`browser.navigate` 即使闸打开也是 stub；`vault read_secret` 要 `allowReadSecrets`；`mcp_bridge` live spawn） |
 | `E_PROTOCOL` | Wire-protocol or backend error after a request was attempted |
-| `E_BLACKLISTED` | Target matches the operator blacklist; new registrations and invoke are blocked (HTTP 403) |
+| `E_BLACKLISTED` | Target matches the operator blacklist; `mcp_add` / `capability_register` / invoke 均拒绝（HTTP 403） |
 
 Plain `Error` messages are classified by `AdapterError.from` / `guessCode` (timeout, unknown tool, 401, …).
 

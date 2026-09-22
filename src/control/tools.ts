@@ -14,11 +14,17 @@ import { suggestFromCandidates, type SuggestedRegistration } from "../discovery/
 import { knownProtocols } from "../runtime/bootstrap.js";
 import { AdapterError } from "../runtime/errors.js";
 import type { AuditLog } from "../runtime/audit-log.js";
-import { invokeAudit } from "../runtime/metrics.js";
+import { invokeAudit, recordSecurityEvent } from "../runtime/metrics.js";
 import { APP_NAME, APP_VERSION, type AppConfig, type JsonObject, type McpToolSchema } from "../runtime/types.js";
 import { withLayer } from "./layers.js";
 import { allowRegistration, assertConfigTargetsAllowed, assertProbeTarget } from "./policy.js";
 import { defaultActor, type PolicyContext, type SecurityPlane } from "./security/index.js";
+import { collectEnvironmentInventory } from "../discovery/environment.js";
+import { suggestFromEnvironment } from "../discovery/environment-suggest.js";
+import { assertAutoAllowed, decideCapability, proposalFromArgs } from "./capability.js";
+import { evaluateUnregister } from "../catalog/lifecycle.js";
+import { inferIngress } from "../catalog/ingress.js";
+import { scanCompat, defaultDropsDir } from "../discovery/compat.js";
 
 export interface ManagementContext {
   registry: ToolRegistry;
@@ -109,7 +115,8 @@ export function managementToolSchemas(config: AppConfig): McpToolSchema[] {
     },
     {
       name: "mcp_remove",
-      description: "Disconnect an adapter and unregister its tools",
+      description:
+        "Disconnect an adapter and unregister its tools (same Catalog path as capability_unregister). Control-plane: does not require allowWrite.",
       inputSchema: {
         type: "object",
         properties: {
@@ -239,6 +246,69 @@ export function managementToolSchemas(config: AppConfig): McpToolSchema[] {
       },
     },
     {
+      name: "environment_inventory",
+      description:
+        "On-demand Environment Plane snapshot (OS/arch, permission hints, listening ports best-effort, runtimes, container clues, config paths). Feeds suggest only — never auto-registers, never sets allowWrite=true.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    {
+      name: "capability_register",
+      description:
+        "Hot-add a capability through the shared Policy Gateway (same path as mcp_add). Pass a suggestion or protocol/name/config. auto:true only works for Safe + readonly + non-blacklist. Suggest never bulk-registers.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          suggestion: { type: "object", additionalProperties: true },
+          protocol: { type: "string" },
+          name: { type: "string" },
+          config: { type: "object", additionalProperties: true },
+          auto: { type: "boolean", description: "Only Safe+readonly+non-blacklist" },
+          confirm: { type: "boolean", description: "Operator confirm (console)" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "capability_unregister",
+      description:
+        "Hot-delete a live capability through the shared Policy Gateway (same path as mcp_remove). Removes the adapter instance and its tools immediately. Control-plane: does not require allowWrite. Console REST requires confirm:true. Missing id is E_NOT_FOUND.",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "capability_configure",
+      description: "Reconfigure a live capability (same path as mcp_update). Does not silently enable writes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          config: { type: "object", additionalProperties: true },
+        },
+        required: ["id", "config"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "partner_list",
+      description:
+        "List southbound Partner connections (ingress=partner). Agent-facing northbound is still MCP only. Apps do not implement MCP.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    {
+      name: "compat_scan",
+      description:
+        "Compat Catalog scan: P0 installed∩catalog + Partner drops; P1 login clues; P2 ports; P3 mcpServers as mcp_bridge 兜底 only; P4 desktop UI deferred. Scan never opens write/desktop/secrets.",
+      inputSchema: {
+        type: "object",
+        properties: { includeInventory: { type: "boolean", default: true } },
+        additionalProperties: false,
+      },
+    },
+    {
       name: "discovery_suggest",
       description:
         "Map probe/scan candidates to one-click mcp_add drafts (protocol, name, config, confidence). Pass candidates or a host to scan first.",
@@ -317,6 +387,12 @@ export const MANAGEMENT_TOOL_NAMES = new Set([
   "mcp_blacklist_list",
   "mcp_blacklist_add",
   "mcp_blacklist_remove",
+  "environment_inventory",
+  "capability_register",
+  "capability_unregister",
+  "capability_configure",
+  "partner_list",
+  "compat_scan",
 ]);
 
 export async function callManagementTool(
@@ -366,6 +442,18 @@ export async function callManagementTool(
       return blacklistAdd(ctx, args);
     case "mcp_blacklist_remove":
       return blacklistRemove(ctx, args);
+    case "environment_inventory":
+      return environmentInventory(ctx);
+    case "capability_register":
+      return capabilityRegister(ctx, args);
+    case "capability_unregister":
+      return capabilityUnregister(ctx, args);
+    case "capability_configure":
+      return update(ctx, args);
+    case "partner_list":
+      return partnerList(ctx);
+    case "compat_scan":
+      return compatScanTool(ctx, args);
     default:
       throw new Error(`Unknown management tool: ${name}`);
   }
@@ -466,9 +554,43 @@ async function update(ctx: ManagementContext, args: Record<string, unknown>) {
 
 async function remove(ctx: ManagementContext, args: Record<string, unknown>) {
   const id = requiredString(args, "id");
+  const rec = ctx.registry.getRecord(id);
+  const live = ctx.registry.get(id);
+  const toolsRemoved = live?.tools.map((t) => t.name) ?? [];
+  await ctx.security.assert({
+    hook: "unregister",
+    actor: actorOf(ctx),
+    target: { protocol: rec?.protocol, adapterId: id, config: rec?.config },
+    tool: {
+      name: "capability_unregister",
+      layer: "management",
+      write: false,
+      adapterId: id,
+      protocol: rec?.protocol,
+    },
+  });
   const removed = await ctx.registry.remove(id);
   if (!removed) throw new AdapterError("E_NOT_FOUND", `Unknown registration id: ${id}`, { details: { id } });
-  return { ok: true, id };
+  recordSecurityEvent({
+    ok: true,
+    kind: "unregister",
+    tool: "capability_unregister",
+    adapterId: id,
+    protocol: rec?.protocol,
+    detail: `unregistered ${id}`,
+    dataDir: ctx.config.dataDir,
+  });
+  return { ok: true, id, state: "unregistered" as const, toolsRemoved };
+}
+
+async function capabilityUnregister(ctx: ManagementContext, args: Record<string, unknown>) {
+  const id = requiredString(args, "id");
+  const decision = evaluateUnregister({ id, live: Boolean(ctx.registry.getRecord(id)) });
+  if (!decision.found) {
+    throw new AdapterError("E_NOT_FOUND", decision.reason, { details: { id } });
+  }
+  const removed = await remove(ctx, args);
+  return { ...removed, lifecycle: decision };
 }
 
 async function query(ctx: ManagementContext, args: Record<string, unknown>) {
@@ -758,6 +880,85 @@ async function blacklistRemove(ctx: ManagementContext, args: Record<string, unkn
   const removed = await ctx.blacklist.remove(id);
   if (!removed) throw new AdapterError("E_NOT_FOUND", `Unknown blacklist id: ${id}`, { details: { id } });
   return { ok: true, id };
+}
+
+async function environmentInventory(ctx: ManagementContext) {
+  await ctx.security.assert({
+    hook: "discover",
+    actor: actorOf(ctx),
+    target: { protocol: "environment" },
+  });
+  const inventory = await collectEnvironmentInventory();
+  const suggestions = suggestFromEnvironment(inventory);
+  const partnerIds = ctx.registry
+    .list()
+    .adapters.filter((a) => inferIngress(a.protocol, ctx.registry.getRecord(a.id)?.config ?? {}) === "partner")
+    .map((a) => a.id);
+  const compat = scanCompat({
+    inventory,
+    partnerIds,
+    dropsDir: process.env.EVERYTHING2MCP_DROPS_DIR || defaultDropsDir(),
+  });
+  return {
+    ok: true,
+    inventory,
+    suggestions,
+    compat,
+    autoRegistered: [],
+    policy: { allowWriteDefault: false, neverAutoOpenWrite: true, suggestDoesNotAutoRegister: true },
+    note: "Suggestions only. Hot-add via capability_register (confirm or auto if Safe+readonly). Deploy does not bulk-register. compat_scan is the structured Compat view.",
+  };
+}
+
+async function capabilityRegister(ctx: ManagementContext, args: Record<string, unknown>) {
+  const proposal = proposalFromArgs(args);
+  const decision = await decideCapability(ctx, proposal);
+  const auto = args.auto === true;
+  const confirm = args.confirm === true;
+  assertAutoAllowed(decision, auto, confirm);
+  const result = await add(ctx, {
+    protocol: decision.proposal.protocol,
+    name: decision.proposal.name,
+    config: decision.proposal.config,
+  });
+  return {
+    ...result,
+    lifecycle: decision,
+    auto: auto && decision.autoEligible,
+    from: proposal.source ?? "agent",
+  };
+}
+
+async function partnerList(ctx: ManagementContext) {
+  const snapshot = ctx.registry.list();
+  const connections = snapshot.adapters.filter(
+    (a) => inferIngress(a.protocol, ctx.registry.getRecord(a.id)?.config ?? {}) === "partner",
+  );
+  return {
+    ok: true,
+    connections,
+    ingressPriority: ["partner", "native", "mcp_bridge"],
+    note: "Southbound is Partner protocol first, then native OpenAPI adapters, then mcp_bridge 兜底. Northbound stays MCP.",
+  };
+}
+
+async function compatScanTool(ctx: ManagementContext, args: Record<string, unknown>) {
+  await ctx.security.assert({
+    hook: "discover",
+    actor: actorOf(ctx),
+    target: { protocol: "compat" },
+  });
+  const includeInventory = args.includeInventory !== false;
+  const inventory = includeInventory ? await collectEnvironmentInventory() : undefined;
+  const partnerIds = ctx.registry
+    .list()
+    .adapters.filter((a) => inferIngress(a.protocol, ctx.registry.getRecord(a.id)?.config ?? {}) === "partner")
+    .map((a) => a.id);
+  return scanCompat({
+    inventory,
+    partnerIds,
+    dropsDir: process.env.EVERYTHING2MCP_DROPS_DIR || defaultDropsDir(),
+  });
 }
 
 function parseLayer(value: unknown): "business" | "management" | "all" {

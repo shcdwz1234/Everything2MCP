@@ -79,6 +79,38 @@ const HERMETIC: Array<{ protocol: string; config: Record<string, unknown> }> = [
   { protocol: "solr", config: { simulator: true } },
   { protocol: "rabbitmq", config: { simulator: true } },
   { protocol: "kubernetes", config: { simulator: true } },
+  { protocol: "os_info", config: {} },
+  { protocol: "platform_fs", config: { roots: ["/etc"] } },
+  { protocol: "platform_process", config: { listFn: () => [{ pid: 1, name: "init" }] } },
+  { protocol: "platform_service", config: { listFn: () => [{ id: "ssh", state: "active" }] } },
+  { protocol: "docker", config: { simulator: true } },
+  { protocol: "journal", config: { simulator: true } },
+  { protocol: "podman", config: { simulator: true } },
+  { protocol: "smb", config: { simulator: true } },
+  { protocol: "nfs", config: { simulator: true } },
+  { protocol: "vault", config: { simulator: true } },
+  { protocol: "aws_iam", config: { simulator: true } },
+  { protocol: "alertmanager", config: { simulator: true } },
+  { protocol: "pubsub", config: { simulator: true } },
+  { protocol: "jira", config: { simulator: true } },
+  { protocol: "browser", config: { allowDesktop: false } },
+  {
+    protocol: "partner",
+    config: {
+      capability_id: "demo",
+      display_name: "Demo",
+      version: "1.0.0",
+      operations: [{ name: "ping", description: "ping", risk: "readonly", inputSchema: { type: "object" } }],
+      simulator: true,
+    },
+  },
+  { protocol: "feishu", config: { simulator: true } },
+  { protocol: "dingtalk", config: { simulator: true } },
+  { protocol: "wecom", config: { simulator: true } },
+  { protocol: "slack", config: { simulator: true } },
+  { protocol: "notion", config: { simulator: true } },
+  { protocol: "github", config: { simulator: true } },
+  { protocol: "mcp_bridge", config: { mcpServers: { demo: { command: "node" } }, simulator: true } },
 ];
 
 const REQUIRE_KEYS_ON_CONNECT = [
@@ -159,6 +191,10 @@ describe("adapter contract", () => {
     assert.equal(createAdapter("influxdb", "a").protocol, "influx");
     assert.equal(createAdapter("enip", "a").protocol, "ethernetip");
     assert.equal(createAdapter("k8s", "a").protocol, "kubernetes");
+    assert.equal(createAdapter("cifs", "a").protocol, "smb");
+    assert.equal(createAdapter("openbao", "a").protocol, "vault");
+    assert.equal(createAdapter("podman", "a").protocol, "podman");
+    assert.equal(createAdapter("lark", "a").protocol, "feishu");
     assert.equal(canonicalProtocol("pg"), "postgres");
     assert.equal(canonicalProtocol("influxdb"), "influx");
     assert.equal(canonicalProtocol("enip"), "ethernetip");
@@ -250,6 +286,30 @@ describe("adapter contract", () => {
         { protocol: "solr", config: { simulator: true }, tool: "update", args: { core: "docs", documents: [{ id: "1" }] } },
         { protocol: "rabbitmq", config: { simulator: true }, tool: "publish", args: { routingKey: "jobs", payload: "x" } },
         { protocol: "kubernetes", config: { simulator: true }, tool: "apply", args: { manifest: { kind: "Pod" } } },
+        { protocol: "docker", config: { simulator: true }, tool: "run", args: { image: "nginx" } },
+        { protocol: "platform_process", config: {}, tool: "shell_exec", args: { command: "true" } },
+        { protocol: "alertmanager", config: { simulator: true }, tool: "create_silence", args: { comment: "x" } },
+        { protocol: "pubsub", config: { simulator: true }, tool: "publish", args: { data: "hi" } },
+        { protocol: "vault", config: { simulator: true }, tool: "read_secret", args: { path: "secret/data/app/db" } },
+        { protocol: "browser", config: {}, tool: "navigate", args: { url: "https://example.test" } },
+        { protocol: "feishu", config: { simulator: true }, tool: "send_message", args: { chat_id: "oc_demo", text: "hi" } },
+        { protocol: "dingtalk", config: { simulator: true }, tool: "send_robot", args: { text: "hi" } },
+        { protocol: "wecom", config: { simulator: true }, tool: "send_app_message", args: { touser: "zhangsan", content: "hi" } },
+        { protocol: "slack", config: { simulator: true }, tool: "post_message", args: { channel: "C1", text: "hi" } },
+        { protocol: "notion", config: { simulator: true }, tool: "create_page", args: { title: "n" } },
+        { protocol: "github", config: { simulator: true }, tool: "create_issue", args: { title: "n" } },
+        {
+          protocol: "partner",
+          config: {
+            capability_id: "demo",
+            display_name: "Demo",
+            version: "1.0.0",
+            operations: [{ name: "send_message", description: "send", risk: "write", inputSchema: { type: "object" } }],
+            simulator: true,
+          },
+          tool: "send_message",
+          args: { chat_id: "c", text: "hi" },
+        },
       ];
     for (const { protocol, config, tool, args } of cases) {
       const adapter = createAdapter(protocol, `ro-${protocol}`);
