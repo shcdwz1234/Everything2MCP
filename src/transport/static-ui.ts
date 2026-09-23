@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MIME: Record<string, string> = {
@@ -16,6 +16,20 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
 };
+
+/** 带扩展名的静态资源失败时应 404，不可 SPA 回退成 index.html（否则页面空白） */
+const STATIC_ASSET_EXT = new Set([
+  ".js",
+  ".mjs",
+  ".css",
+  ".map",
+  ".png",
+  ".ico",
+  ".svg",
+  ".woff2",
+  ".json",
+  ".txt",
+]);
 
 const MISSING_HTML = `<!doctype html>
 <html lang="zh-CN">
@@ -51,11 +65,14 @@ export function resolveUiRoot(): string {
   return candidates[0]!;
 }
 
+/** Windows 下不可用 `/` 拼 prefix；用 path.relative 防目录穿越 */
 function safeJoin(root: string, rel: string): string | undefined {
-  const full = resolve(root, rel);
-  const prefix = root.endsWith("/") ? root : `${root}/`;
-  if (full !== root && !full.startsWith(prefix) && full !== root) return undefined;
-  if (!full.startsWith(root)) return undefined;
+  const rootAbs = resolve(root);
+  const full = resolve(rootAbs, rel);
+  const relPath = relative(rootAbs, full);
+  if (relPath.startsWith("..") || relPath === "..") return undefined;
+  // absolute escape (other drive on Windows)
+  if (full !== rootAbs && resolve(rootAbs, relPath) !== full) return undefined;
   return full;
 }
 
@@ -80,11 +97,20 @@ export function tryServeUi(req: IncomingMessage, res: ServerResponse, pathname: 
   }
 
   let rel = pathname === "/ui" ? "index.html" : pathname.slice("/ui/".length);
-  if (!rel || rel.endsWith("/")) rel += rel.endsWith("/") ? "index.html" : "index.html";
+  if (!rel || rel.endsWith("/")) rel = `${rel}index.html`.replace(/\/{2,}/g, "/");
+  rel = rel.replace(/^\/+/, "");
 
+  const ext = extname(rel).toLowerCase();
   const file = safeJoin(uiRoot, rel);
   if (file && existsSync(file) && statSync(file).isFile()) {
     sendFile(res, file);
+    return true;
+  }
+
+  // 静态资源找不到 → 404，禁止回退 HTML（否则 module script 解析失败页面空白）
+  if (STATIC_ASSET_EXT.has(ext)) {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(`Not found: ${pathname}`);
     return true;
   }
 

@@ -8,8 +8,8 @@
     "everything2mcp": "./dist/index.js"
   },
   "scripts": {
-    "ui:build": "tsc -p ui/tsconfig.json && mkdir -p dist/ui && cp ui/index.html ui/styles.css dist/ui/",
-    "build": "tsc && mkdir -p dist/adapters/sparkplug dist/adapters/pulsar && cp src/adapters/sparkplug/sparkplug_b.proto dist/adapters/sparkplug/ && cp src/adapters/pulsar/PulsarApi.proto dist/adapters/pulsar/ && npm run ui:build",
+    "ui:build": "tsc -p ui/tsconfig.json && node scripts/copy-assets.mjs ui",
+    "build": "tsc && node scripts/copy-assets.mjs proto && npm run ui:build",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "tsx --test tests/**/*.test.ts"
