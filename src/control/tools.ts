@@ -34,6 +34,8 @@ export interface ManagementContext {
   auditLog?: AuditLog;
   /** MCP tools/call is mcp-stdio. Console REST must set console. Missing → agent. */
   actor?: PolicyContext["actor"];
+  /** S4 auto-discovery engine (console REST only; not an MCP tool). */
+  discovery?: import("./auto-discovery.js").AutoDiscovery;
 }
 
 function actorOf(ctx: ManagementContext): PolicyContext["actor"] {

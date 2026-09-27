@@ -1,7 +1,7 @@
 import { PROTOCOL_CONFIG_HELP, canonicalProtocol, blacklistId, targetFromConfig, inferIngress } from "../catalog/index.js";
 import { looksLikeReadRpc } from "../adapters/rpc-gate.js";
 import { AdapterError, ERROR_CODE_HELP, ERROR_CODES, errorPayload } from "../runtime/errors.js";
-import { invokeAudit, invokeAuditEvents } from "../runtime/metrics.js";
+import { invokeAudit, invokeAuditEvents, recordSecurityEvent } from "../runtime/metrics.js";
 import { APP_NAME, APP_VERSION, type JsonObject, type McpToolSchema } from "../runtime/types.js";
 import { knownProtocols } from "../runtime/bootstrap.js";
 import { redactSecrets } from "./redact.js";
@@ -143,6 +143,11 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     };
   }
 
+  const toggle = match(method, "POST", "/api/adapters/:id/enabled", path) ?? match(method, "PUT", "/api/adapters/:id/enabled", path);
+  if (toggle?.id) {
+    return { status: 200, body: await setAdapterEnabled(ctx, toggle.id, body.enabled !== false) };
+  }
+
   const ping = match(method, "POST", "/api/adapters/:id/ping", path);
   if (ping?.id) return pingAdapter(ctx, ping.id);
 
@@ -209,6 +214,84 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     }
     await ctx.security.setMode(mode, { actor: { kind: "console", tokenPresent: true } });
     return { status: 200, body: { ok: true, mode: ctx.security.mode(), modules: ctx.security.list() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/settings") {
+    const d = requireAuto(ctx);
+    await d.load();
+    return { status: 200, body: { ok: true, settings: d.getSettings(), status: d.status(), scope: d.describe() } };
+  }
+
+  if ((method === "PUT" || method === "POST") && path === "/api/discovery/settings") {
+    const d = requireAuto(ctx);
+    const settings = await d.updateSettings(body as never);
+    return { status: 200, body: { ok: true, settings, status: d.status() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/status") {
+    const d = requireAuto(ctx);
+    await d.load();
+    return { status: 200, body: { ok: true, ...d.status() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/candidates") {
+    const d = requireAuto(ctx);
+    const all = await d.listCandidates();
+    const include = req.query.get("status");
+    const candidates = include === "all" ? all : all.filter((c) => c.status === (include ?? "new"));
+    return { status: 200, body: { ok: true, candidates, counts: d.counts() } };
+  }
+
+  if (method === "POST" && path === "/api/discovery/run") {
+    const d = requireAuto(ctx);
+    const wait = body.wait !== false;
+    if (!wait) {
+      void d.run("manual").catch(() => undefined);
+      return { status: 202, body: { ok: true, started: true, status: d.status() } };
+    }
+    const run = await d.run("manual");
+    return { status: 200, body: { ok: true, run, counts: d.counts() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/runs") {
+    const d = requireAuto(ctx);
+    await d.load();
+    const limit = Number(req.query.get("limit") ?? 20);
+    return { status: 200, body: { ok: true, runs: d.listRuns(Number.isFinite(limit) ? limit : 20) } };
+  }
+
+  const candEnable = match(method, "POST", "/api/discovery/candidates/:id/enable", path);
+  if (candEnable?.id) {
+    const d = requireAuto(ctx);
+    const result = await d.enable(candEnable.id, {
+      name: typeof body.name === "string" ? body.name : undefined,
+      config: body.config && typeof body.config === "object" && !Array.isArray(body.config) ? (body.config as JsonObject) : undefined,
+      credentials:
+        body.credentials && typeof body.credentials === "object" && !Array.isArray(body.credentials)
+          ? (Object.fromEntries(Object.entries(body.credentials as Record<string, unknown>).filter(([, v]) => typeof v === "string")) as Record<string, string>)
+          : undefined,
+    });
+    return { status: 201, body: result };
+  }
+
+  const candDismiss = match(method, "POST", "/api/discovery/candidates/:id/dismiss", path);
+  if (candDismiss?.id) {
+    const d = requireAuto(ctx);
+    return { status: 200, body: { ok: true, candidate: await d.dismiss(candDismiss.id) } };
+  }
+
+  const candRestore = match(method, "POST", "/api/discovery/candidates/:id/restore", path);
+  if (candRestore?.id) {
+    const d = requireAuto(ctx);
+    return { status: 200, body: { ok: true, candidate: await d.restore(candRestore.id) } };
+  }
+
+  if (method === "GET" && path === "/api/activity") {
+    return { status: 200, body: await activityPayload(ctx, Number(req.query.get("limit") ?? 100)) };
+  }
+
+  if (method === "GET" && path === "/api/overview") {
+    return { status: 200, body: await overviewPayload(ctx) };
   }
 
   if (method === "POST" && path === "/api/discovery/scan") {
@@ -368,6 +451,97 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   });
 }
 
+/** 当前能力 row toggle: off keeps the registration but unmounts it (no Agent tools). */
+async function setAdapterEnabled(ctx: ManagementContext, id: string, enabled: boolean): Promise<Record<string, unknown>> {
+  const rec = ctx.registry.getRecord(id);
+  if (!rec) throw new AdapterError("E_NOT_FOUND", `Unknown registration id: ${id}`, { details: { id } });
+  await ctx.security.assert({
+    hook: enabled ? "register" : "unregister",
+    actor: { kind: "console", tokenPresent: true },
+    target: { protocol: rec.protocol, adapterId: id, config: rec.config },
+    config: rec.config,
+  });
+  await ctx.registry.setEnabled(id, enabled);
+  recordSecurityEvent({
+    ok: true,
+    kind: "policy",
+    tool: enabled ? "capability.enable" : "capability.disable",
+    adapterId: id,
+    protocol: rec.protocol,
+    detail: enabled ? "启用" : "停用 (registration kept)",
+    dataDir: ctx.config.dataDir,
+  });
+  const blocked = new Set((await ctx.blacklist.list()).map((e) => e.id));
+  const snap = ctx.registry.list().adapters.find((a) => a.id === id) ?? { id };
+  return { ok: true, id, enabled, adapter: decorateAdapter(ctx, id, snap, blocked) };
+}
+
+function requireAuto(ctx: ManagementContext) {
+  if (!ctx.discovery) {
+    throw new AdapterError("E_UNSUPPORTED", "Auto-discovery engine is not running in this process");
+  }
+  return ctx.discovery;
+}
+
+/** 活动 page: audit ring + discovery runs, newest first. */
+async function activityPayload(ctx: ManagementContext, rawLimit: number): Promise<Record<string, unknown>> {
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 100;
+  const audit = ctx.auditLog?.snapshot(limit).events ?? invokeAuditEvents(limit);
+  const runs = ctx.discovery ? (await ctx.discovery.load(), ctx.discovery.listRuns(20)) : [];
+  const items: Array<Record<string, unknown>> = [
+    ...audit.map((e) => ({ type: e.kind === "discovery" ? "discovery" : e.kind ?? "invoke", ...e })),
+    ...runs.map((r) => ({
+      type: "discovery_run",
+      at: r.finishedAt ?? r.startedAt,
+      ok: r.ok,
+      tool: `discovery.${r.trigger}`,
+      detail: `hosts=${r.hostsScanned}/${r.hostsPlanned}${r.truncated ? " (capped)" : ""} found=${r.found} new=${r.newCount} offline=${r.offlineCount}`,
+      run: r,
+    })),
+  ];
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const counts = ctx.auditLog?.snapshot(limit).counts ?? invokeAudit();
+  return {
+    ok: true,
+    counts: { ...counts, errors: items.filter((i) => i.ok === false).length, discoveryRuns: runs.length },
+    items: items.slice(0, limit),
+  };
+}
+
+/**
+ * Summary strip for the 能力 page. Numbers match the three tabs:
+ * current = registered capabilities, supported = protocol catalog + ready
+ * discovered candidates, blacklist = all entries (target + capability + tool).
+ */
+async function overviewPayload(ctx: ManagementContext): Promise<Record<string, unknown>> {
+  const snap = ctx.registry.list();
+  const entries = await ctx.blacklist.list();
+  const blocked = new Set(entries.map((e) => e.id));
+  let blockedCaps = 0;
+  let enabled = 0;
+  let failing = 0;
+  for (const a of snap.adapters) {
+    const d = decorateAdapter(ctx, a.id, a, blocked);
+    if (d.blacklisted) blockedCaps += 1;
+    else if (a.status === "live" && d.disabled !== true) enabled += 1;
+    if (a.status !== "live") failing += 1;
+  }
+  const disc = ctx.discovery ? (await ctx.discovery.listCandidates(), ctx.discovery.counts()) : { discovered: 0, ready: 0, needsConfig: 0 };
+  const schemas = allConfigSchemas();
+  return {
+    ok: true,
+    current: { total: snap.adapters.length, enabled, blacklisted: blockedCaps, failing, tools: snap.tools.length },
+    supported: { discovered: disc.discovered ?? 0, ready: disc.ready ?? 0, needsConfig: disc.needsConfig ?? 0, types: schemas.length },
+    blacklist: {
+      total: entries.length,
+      target: entries.filter((e) => (e.kind ?? "target") === "target").length,
+      capability: entries.filter((e) => e.kind === "capability").length,
+      tool: entries.filter((e) => e.kind === "tool").length,
+    },
+    discovery: ctx.discovery ? ctx.discovery.status() : { mode: "off" },
+  };
+}
+
 function protocolSchemaOrThrow(id: string) {
   if (!hasProtocol(id)) {
     throw new AdapterError("E_UNKNOWN_PROTOCOL", `Unknown protocol: ${id}`, { details: { protocol: id } });
@@ -507,6 +681,7 @@ function decorateAdapter(
     createdAt: record?.createdAt,
     updatedAt: record?.updatedAt,
     allowWrite: record?.config.allowWrite === true,
+    disabled: record?.disabled === true,
     ingress: record ? inferIngress(record.protocol, record.config) : undefined,
     blacklisted,
     blacklistKind,
@@ -593,7 +768,7 @@ function settingsPayload(ctx: ManagementContext): unknown {
     app: APP_NAME,
     version: APP_VERSION,
     dataDir: ctx.config.dataDir,
-    discovery: ctx.config.discovery,
+    discovery: { ...ctx.config.discovery, mode: ctx.discovery?.getSettings().mode ?? "off", auto: ctx.discovery?.status() },
     transport: {
       kind: t.kind,
       host: t.host,
@@ -613,6 +788,8 @@ function settingsPayload(ctx: ManagementContext): unknown {
     console: {
       wave: "X",
       ui: "/ui/",
+      redesign: true,
+      autoDiscovery: Boolean(ctx.discovery),
       discovery: true,
       import: true,
       plan: true,

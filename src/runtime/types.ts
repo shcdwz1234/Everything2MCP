@@ -54,6 +54,8 @@ export interface RegistrationRecord {
   config: JsonObject;
   createdAt: string;
   updatedAt: string;
+  /** Console 启用开关 off: registration kept, adapter not mounted, no tools exposed. */
+  disabled?: boolean;
 }
 
 export interface AdapterHealth {
@@ -70,7 +72,7 @@ export interface AdapterSnapshot {
   toolCount: number;
   tools: string[];
   health?: AdapterHealth;
-  status: "live" | "restore_failed";
+  status: "live" | "restore_failed" | "disabled";
   error?: string;
   /** Southbound ingress. Northbound Agent surface is always MCP. */
   ingress?: IngressKind;
@@ -119,6 +121,11 @@ export interface AppConfig {
     /** Always false. CIDR is never allowed; EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN cannot set this. */
     allowScan: boolean;
     timeoutMs: number;
+    /**
+     * S4 auto-discovery mode override. Unset → dataDir/discovery.json, then
+     * EVERYTHING2MCP_DISCOVERY_MODE, then "auto" ("off" under node --test).
+     */
+    mode?: "auto" | "manual" | "off";
   };
   transport: TransportConfig;
   rateLimit: RateLimitConfig;
