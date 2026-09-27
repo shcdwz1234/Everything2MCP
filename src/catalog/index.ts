@@ -26,3 +26,11 @@ export {
   validateProtocolConfig,
   validateRegistration,
 } from "./validate.js";
+export {
+  configSchemaFor,
+  allConfigSchemas,
+  checkRequiredBySchema,
+  missingRequiredFields,
+  missingSecretFields,
+} from "./config-schema.js";
+export type { ConfigSchema, ConfigField } from "./config-schema.js";

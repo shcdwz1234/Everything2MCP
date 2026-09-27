@@ -7,6 +7,10 @@ import { knownProtocols } from "../runtime/bootstrap.js";
 import { redactSecrets } from "./redact.js";
 import { MANAGEMENT_TOOL_NAMES, callManagementTool, managementToolSchemas, type ManagementContext } from "./tools.js";
 import { layerOf } from "./layers.js";
+import { allConfigSchemas, configSchemaFor, checkRequiredBySchema, missingRequiredFields } from "../catalog/config-schema.js";
+import { hasProtocol, createAdapter } from "../runtime/bootstrap.js";
+import { validateRegistration, assertNotBlacklisted } from "../catalog/index.js";
+import { assertConfigTargetsAllowed } from "./policy.js";
 import {
   assertPartnerToken,
   partnerHeartbeat,
@@ -76,6 +80,24 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "GET" && path === "/api/matrix") {
     return { status: 200, body: matrixPayload(ctx) };
+  }
+
+  if (method === "GET" && path === "/api/protocols") {
+    return { status: 200, body: { ok: true, protocols: allConfigSchemas() } };
+  }
+
+  const protoOne = match(method, "GET", "/api/protocols/:id", path);
+  if (protoOne) {
+    return { status: 200, body: { ok: true, schema: protocolSchemaOrThrow(protoOne.id!) } };
+  }
+
+  const protoValidate = match(method, "POST", "/api/protocols/:id/validate", path);
+  if (protoValidate) {
+    return { status: 200, body: validateAgainstSchema(protoValidate.id!, asObject(body.config ?? body)) };
+  }
+
+  if (method === "POST" && path === "/api/adapters/test") {
+    return { status: 200, body: await testConnection(ctx, body) };
   }
 
   if (method === "GET" && path === "/api/audit") {
@@ -345,6 +367,92 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   });
 }
 
+function protocolSchemaOrThrow(id: string) {
+  if (!hasProtocol(id)) {
+    throw new AdapterError("E_UNKNOWN_PROTOCOL", `Unknown protocol: ${id}`, { details: { protocol: id } });
+  }
+  return configSchemaFor(id);
+}
+
+/** Pure schema + validateProtocolConfig check. Never connects. */
+function validateAgainstSchema(id: string, config: JsonObject): Record<string, unknown> {
+  const schema = protocolSchemaOrThrow(id);
+  const missing = missingRequiredFields(id, config).map((f) => f.key);
+  let error: string | undefined = checkRequiredBySchema(id, config);
+  if (!error) {
+    try {
+      validateRegistration(id, "probe", config);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+  return { ok: !error, protocol: schema.protocol, missing, error };
+}
+
+/**
+ * Wizard "测试连接": same gates as mcp_add (validate, SSRF target check,
+ * security register hook, blacklist) then connect + listTools on a throwaway
+ * adapter instance. Nothing is persisted or exposed to the Agent.
+ */
+async function testConnection(ctx: ManagementContext, body: JsonObject): Promise<Record<string, unknown>> {
+  const protocol = typeof body.protocol === "string" ? body.protocol : "";
+  if (!protocol) throw new AdapterError("E_INVALID_ARGUMENT", "protocol is required");
+  protocolSchemaOrThrow(protocol);
+  const config = asObject(body.config);
+  const name = typeof body.name === "string" && body.name ? body.name : "test";
+  validateRegistration(protocol, name, config);
+  await assertConfigTargetsAllowed(config);
+  await ctx.security.assert({
+    hook: "register",
+    actor: { kind: "console", tokenPresent: true },
+    target: { protocol, config },
+    config,
+  });
+  await assertNotBlacklisted(ctx.blacklist, protocol, config);
+  const adapter = createAdapter(canonicalProtocol(protocol), `${canonicalProtocol(protocol)}:__test__`);
+  const started = Date.now();
+  const limit = typeof config.timeoutMs === "number" && config.timeoutMs > 0 ? Math.min(config.timeoutMs, 15_000) : 8_000;
+  try {
+    const tools = await withDeadline(
+      (async () => {
+        await adapter.connect(config);
+        return adapter.listTools();
+      })(),
+      limit,
+    );
+    const health = adapter.health ? await withDeadline(adapter.health(), limit).catch((e) => ({ ok: false, detail: String(e) })) : { ok: true };
+    return {
+      ok: health.ok !== false,
+      protocol: canonicalProtocol(protocol),
+      latencyMs: Date.now() - started,
+      toolCount: tools.length,
+      tools: tools.slice(0, 50).map((t) => t.name),
+      health,
+    };
+  } catch (err) {
+    const payload = errorPayload(err);
+    return { ok: false, protocol: canonicalProtocol(protocol), latencyMs: Date.now() - started, error: payload };
+  } finally {
+    await adapter.disconnect().catch(() => undefined);
+  }
+}
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new AdapterError("E_TIMEOUT", `Timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 async function listAdapters(ctx: ManagementContext): Promise<RestResponse> {
   const listed = (await callManagementTool("mcp_list", { layer: "business", verbose: true, audience: "console" }, ctx)) as {
     adapters: Array<Record<string, unknown>>;
@@ -535,6 +643,8 @@ function matrixPayload(ctx: ManagementContext): unknown {
         id,
         canonical,
         help: PROTOCOL_CONFIG_HELP[canonical] ?? PROTOCOL_CONFIG_HELP[id] ?? "",
+        title: configSchemaFor(canonical).title,
+        pack: configSchemaFor(canonical).pack,
         registered: byProto.get(canonical) ?? byProto.get(id) ?? 0,
       };
     })
