@@ -628,7 +628,7 @@ Tools 与 S3 相同：`list` `get` `put` `delete`。`unsigned: true` 走 GCS JSO
 
 ## 平台只读（热加载，不在 boot 挂载）
 
-工厂在 boot 注册，**catalog 默认空**。必须经 `capability_register` / `#/capabilities` / `mcp_add` 才变成业务 tools。
+工厂在 boot 注册，**catalog 默认空**。必须经 `capability_register` / 控制台「能力 → + 添加」或 `#/hotload` / `mcp_add` 才变成业务 tools。
 
 ### `os_info`
 

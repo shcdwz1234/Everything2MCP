@@ -132,10 +132,10 @@ describe("S3 blacklist granularity: capability instance + tool", { timeout: 30_0
     const base = app.http.url;
     const post = (path: string, body: unknown) =>
       fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    assert.equal((await post("/api/adapters", { protocol: "sqlite", name: "mem", config: { filename: ":memory:" } })).status, 201);
-    const cap = await post("/api/blacklist", { kind: "capability", adapterId: "sqlite:mem" });
+    assert.equal((await post("/api/adapters", { protocol: "postgres", name: "mem", config: { simulator: true } })).status, 201);
+    const cap = await post("/api/blacklist", { kind: "capability", adapterId: "postgres:mem" });
     assert.equal(cap.status, 201);
-    const tool = await post("/api/blacklist", { kind: "tool", pattern: "sqlite.*.execute" });
+    const tool = await post("/api/blacklist", { kind: "tool", pattern: "postgres.*.execute" });
     assert.equal(tool.status, 201);
     const bad = await post("/api/blacklist", { kind: "tool", pattern: "**" });
     assert.equal(bad.status, 400);
@@ -143,14 +143,14 @@ describe("S3 blacklist granularity: capability instance + tool", { timeout: 30_0
     assert.equal(list.counts.capability, 1);
     assert.equal(list.counts.tool, 1);
     const adapters = (await (await fetch(`${base}/api/adapters`)).json()) as { adapters: Array<{ id: string; blacklisted: boolean; blacklistKind: string }> };
-    const row = adapters.adapters.find((a) => a.id === "sqlite:mem");
+    const row = adapters.adapters.find((a) => a.id === "postgres:mem");
     assert.equal(row?.blacklisted, true);
     assert.equal(row?.blacklistKind, "capability");
-    const inv = await post(`/api/tools/${encodeURIComponent("sqlite.mem.list_tables")}/invoke`, { arguments: {} });
+    const inv = await post(`/api/tools/${encodeURIComponent("postgres.mem.list_tables")}/invoke`, { arguments: {} });
     assert.equal(inv.status, 403);
-    const del = await fetch(`${base}/api/blacklist/${encodeURIComponent("cap|sqlite:mem")}`, { method: "DELETE" });
+    const del = await fetch(`${base}/api/blacklist/${encodeURIComponent("cap|postgres:mem")}`, { method: "DELETE" });
     assert.equal(del.status, 200);
-    const inv2 = await post(`/api/tools/${encodeURIComponent("sqlite.mem.list_tables")}/invoke`, { arguments: {} });
+    const inv2 = await post(`/api/tools/${encodeURIComponent("postgres.mem.list_tables")}/invoke`, { arguments: {} });
     assert.equal(inv2.status, 200);
   });
 });

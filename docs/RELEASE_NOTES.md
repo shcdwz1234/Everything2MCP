@@ -2,7 +2,7 @@
 
 从空仓库做到可跑的协议→MCP 桥 + 同进程 Web 控制台。默认 **stdio MCP**；HTTP 时同一进程挂 `/mcp`、`/sse`、`/ui`、`/api`。
 
-**当前快照：Phase X（Partner + Compat）。** 测试全量绿 **`133` suites / `545` tests**。部署 = 最小 MCP 核心；能力靠热加载。南向 Partner → native → mcp_bridge 兜底。
+**当前快照：控制台改版（在 Phase X 之上）。** 测试全量绿 **`140` suites / `570` tests**（Node 22；Node 20 缺 `node:sqlite`，那部分用例失败，与改版前相同）。部署 = 最小 MCP 核心；能力靠热加载。南向 Partner → native → mcp_bridge 兜底。
 
 ## 如何启动
 
@@ -247,8 +247,9 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 | **Phase V hot-add / env inventory / platform RO / docker+journal** | **115** | **494** |
 | **Phase W backlog P1–P5 (smb/nfs/vault/iam/am/pubsub/jira/browser)** | **124** | **522** |
 | **Phase X Partner + Compat + native apps + mcp_bridge** | **133** | **545** |
+| **控制台改版 configSchema / 黑名单粒度 / 自动发现 / 新 UI** | **140** | **570** |
 
-复跑：`npm run build && npm test`。
+复跑：`npm run build && npm test`（`npm test` = `node scripts/run-tests.mjs`，Windows / macOS / Linux 同一命令；可追加 `-- --test-name-pattern=...` 或指定 `tests/x.test.ts`）。
 
 ### Phase X — Partner + Compat
 
@@ -257,14 +258,26 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 - `compat_scan` + Compat Catalog；`mcp_bridge` 兜底
 - 扫描成功 ≠ 打开写/桌面/密钥；write/desktop 不能 Safe-auto
 
+### 控制台改版（Console Redesign）
+
+- **能力页三 tab**：当前能力（启用开关、加入黑名单、tools 抽屉逐个屏蔽）/ 可支持能力（已发现候选一键启用或「需要配置」只填缺的字段 + 全部类型卡片进向导）/ 黑名单（一键解除）。摘要条计数与 tab 一致。
+- **添加向导**：按每协议 `configSchema` 生成表单（必填在前、高级折叠、密钥脱敏、`allowWrite` 警示），**测试连接**不落盘；编辑时 `••••` 保留原密钥。
+- **黑名单粒度**：目标 / 能力实例（`cap|<id>`）/ 工具 glob（`tool|redis.*.flushall`）；Full 下仍生效；v1 文件兼容。
+- **私网自动发现**：自动（默认，每 30 分钟）/ 手动 / 关闭；本机 + 网卡私网（≤/24）+ 有界 mDNS/SSDP 组播 + 手动范围（≤/16）；link-local 与云 metadata 永不扫描；候选只读、默认不自动启用。环境变量 `EVERYTHING2MCP_DISCOVERY_MODE` / `_INTERVAL_MIN` / `_SCOPES` / `_EXCLUDE`。
+- **能力停用**：保留注册与配置、卸载 tools，重启后保持。
+- **活动页**：调用、策略、启停、能力增删改、黑名单增删、发现运行，密钥脱敏。
+- 新 REST：`/api/protocols*`、`/api/adapters/test`、`/api/adapters/:id/enabled`、`/api/overview`、`/api/activity`、`/api/discovery/settings|status|candidates|run|runs`。
+- 构建 / 测试脚本跨平台（`scripts/copy-assets.mjs`、`scripts/run-tests.mjs`）；删除重复的 `docs/README.md` 与 `docs/compat/catalog.json`。
+- 报告：[CONSOLE_REDESIGN_REPORT.md](CONSOLE_REDESIGN_REPORT.md)。
+
 ## 本版明确没有
 
-- 默认网段 / CIDR 扫描、默认 `allowWrite=true`、`src/core` / `src/management` shim
+- Agent 工具的网段 / CIDR 扫描（私网自动发现只在控制台）、默认 `allowWrite=true`、`src/core` / `src/management` shim
 - 部署时 bulk-register、静默全局写、`allowShell`/`allowDesktop` 真执行、完整 CIFS TREE_CONNECT、完整 NFS 客户端
 - Kafka 完整 rebalance / 真事务协调器 / EOS（需真集群）
 - SQL CI 真 Postgres/MySQL 镜像（本环境无 Docker）
 - LDAP GSSAPI；安全平面 v2/v3 外部模块真加载；MCP Agent 写 challenge
-- NFS 适配器；mDNS 组播浏览（单播 5353 已有）
+- NFS 完整客户端；Agent 侧 mDNS 组播浏览（单播 5353 已有；控制台自动发现有有界组播）
 - Sparkplug 完整 Host（自动 rebirth 循环 / 全量 NCMD）
 - Neo4j 完整 Bolt；k8s exec/apply/watch；SolrCloud admin
 - ChromaDB

@@ -279,10 +279,10 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       const runs = await j("/api/discovery/runs");
       assert.equal(runs.body.runs.length, 1);
 
-      await put("/api/adapters", { protocol: "sqlite", name: "mem", config: { filename: ":memory:" } }, "POST");
-      await put("/api/blacklist", { kind: "tool", pattern: "sqlite.*.execute" }, "POST");
+      await put("/api/adapters", { protocol: "postgres", name: "mem", config: { simulator: true } }, "POST");
+      await put("/api/blacklist", { kind: "tool", pattern: "postgres.*.execute" }, "POST");
       const listed = await j("/api/adapters");
-      const mem = listed.body.adapters.find((x: { id: string }) => x.id === "sqlite:mem");
+      const mem = listed.body.adapters.find((x: { id: string }) => x.id === "postgres:mem");
       assert.equal(mem.source, "manual");
       assert.equal(mem.address, undefined, "file / memory specs have no network address");
       const ov = await j("/api/overview");
@@ -293,17 +293,17 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       assert.equal(ov.body.blacklist.total, 1);
       assert.equal(ov.body.blacklist.tool, 1);
 
-      const off = await put(`/api/adapters/${encodeURIComponent("sqlite:mem")}/enabled`, { enabled: false }, "POST");
+      const off = await put(`/api/adapters/${encodeURIComponent("postgres:mem")}/enabled`, { enabled: false }, "POST");
       assert.equal(off.status, 200);
       assert.equal(off.body.adapter.status, "disabled");
       const tools = await j("/api/tools");
-      assert.equal(tools.body.tools.some((x: { name: string }) => x.name.startsWith("sqlite.mem.")), false);
+      assert.equal(tools.body.tools.some((x: { name: string }) => x.name.startsWith("postgres.mem.")), false);
       const ov2 = await j("/api/overview");
       assert.equal(ov2.body.current.enabled, 0);
       assert.equal(ov2.body.current.total, 1);
       assert.equal(ov2.body.current.disabled, 1);
       assert.equal(ov2.body.current.failing, 0);
-      const on = await put(`/api/adapters/${encodeURIComponent("sqlite:mem")}/enabled`, { enabled: true }, "POST");
+      const on = await put(`/api/adapters/${encodeURIComponent("postgres:mem")}/enabled`, { enabled: true }, "POST");
       assert.equal(on.body.adapter.status, "live");
 
       const act = await j("/api/activity");
@@ -312,7 +312,7 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       assert.ok(act.body.items.some((i: { tool?: string }) => i.tool === "capability.disable"));
       // console-initiated changes are audited (ids only), and the startup/manual run is not listed twice
       assert.ok(act.body.items.some((i: { tool?: string }) => i.tool === "capability.add"));
-      assert.ok(act.body.items.some((i: { tool?: string; detail?: string }) => i.tool === "blacklist.add" && i.detail === "tool|sqlite.*.execute"));
+      assert.ok(act.body.items.some((i: { tool?: string; detail?: string }) => i.tool === "blacklist.add" && i.detail === "tool|postgres.*.execute"));
       assert.equal(act.body.items.filter((i: { tool?: string }) => i.tool === "discovery.manual").length, 1);
     } finally {
       await app.close();
@@ -325,12 +325,12 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
     const ctxApp = await createEverything2McpServer({ dataDir: t.dataDir });
     const r = (b: unknown, path: string, method = "POST") =>
       handleConsoleRest(ctxApp, { method, pathname: path, query: new URLSearchParams(), body: b });
-    await r({ protocol: "sqlite", name: "mem", config: { filename: ":memory:" } }, "/api/adapters");
-    await r({ enabled: false }, "/api/adapters/sqlite:mem/enabled");
+    await r({ protocol: "postgres", name: "mem", config: { simulator: true } }, "/api/adapters");
+    await r({ enabled: false }, "/api/adapters/postgres:mem/enabled");
     await ctxApp.close();
     const again = await createEverything2McpServer({ dataDir: t.dataDir });
     try {
-      const a = again.registry.list().adapters.find((x) => x.id === "sqlite:mem");
+      const a = again.registry.list().adapters.find((x) => x.id === "postgres:mem");
       assert.equal(a?.status, "disabled");
       assert.equal(again.registry.list().tools.length, 0);
     } finally {

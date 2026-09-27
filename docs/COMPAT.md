@@ -1,6 +1,6 @@
 # Compat Catalog
 
-**Phase X.** Compat is a **suggest** surface, not a grant of power. Test baseline: **133 suites / 545 tests** (`npm test`).
+**Phase X.** Compat is a **suggest** surface, not a grant of power. Test baseline: **140 suites / 570 tests** (`npm test`, after the console redesign).
 
 `compat_scan` (and `environment_inventory.compat`) returns structured suggestions with `ingress`. One-click path is the same Lifecycle: `capability_register`.
 
@@ -18,7 +18,7 @@ Scan success ≠ `allowWrite` / `allowShell` / `allowDesktop` / `allowReadSecret
 
 ## Catalog
 
-Runtime: `src/discovery/compat-catalog.ts`. Human copy: `compat/catalog.json`.
+Runtime: `src/discovery/compat-catalog.ts`. Human copy: [`compat/catalog.json`](../compat/catalog.json) (repo root; the former duplicate under `docs/compat/` was removed).
 
 Native adapters (honest MVPs, hermetic simulators; live HTTP behind `config.url`; writes gated):
 
