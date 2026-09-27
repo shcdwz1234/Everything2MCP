@@ -112,21 +112,27 @@ export function createBuiltinModules(deps: {
         const hide: string[] = [];
         const listed = ctx.listedTools ?? [];
         for (const tool of listed) {
-          const id = tool.adapterId;
-          if (!id || !deps.lookupAdapter) continue;
-          const rec = deps.lookupAdapter(id);
-          if (!rec) continue;
-          const target = targetFromConfig(rec.protocol, rec.config);
-          if (!target) continue;
-          const hit = await deps.blacklist.find(blacklistId(target));
+          const rec = tool.adapterId && deps.lookupAdapter ? deps.lookupAdapter(tool.adapterId) : undefined;
+          const hit = await deps.blacklist.matchSubject({
+            protocol: rec?.protocol,
+            config: rec?.config,
+            adapterId: tool.adapterId,
+            toolName: tool.name,
+          });
           if (hit) hide.push(tool.name);
         }
         return { effect: "allow", reason: "list filter", moduleId: this.id, hideTools: hide };
       }
       const protocol = ctx.target?.protocol ?? ctx.tool?.protocol;
       const config = (ctx.target?.config ?? ctx.config) as JsonObject | undefined;
-      if (!protocol || !config) return allowDecision(this.id);
-      const hit = await deps.blacklist.matchConfig(protocol, config);
+      const adapterId = ctx.target?.adapterId ?? ctx.tool?.adapterId;
+      // register only checks target + instance; tool patterns apply at list/invoke.
+      const hit = await deps.blacklist.matchSubject({
+        protocol,
+        config,
+        adapterId,
+        toolName: ctx.hook === "invoke" ? ctx.tool?.name : undefined,
+      });
       if (!hit) return allowDecision(this.id);
       const err = blacklistedError(hit);
       return denyDecision(this.id, err.code, err.message);

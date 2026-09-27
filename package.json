@@ -9,10 +9,10 @@
   },
   "scripts": {
     "ui:build": "tsc -p ui/tsconfig.json && node scripts/copy-assets.mjs ui",
-    "build": "tsc && node scripts/copy-assets.mjs proto && npm run ui:build",
+    "build": "tsc && node scripts/copy-assets.mjs protos && npm run ui:build",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "node scripts/run-tests.mjs"
   },
   "engines": {
     "node": ">=18.18"

@@ -18,6 +18,7 @@ import { defaultActor } from "./security/types.js";
 import { pickupDrops } from "./partner.js";
 import { defaultDropsDir } from "../discovery/compat.js";
 import { join } from "node:path";
+import { AutoDiscovery } from "./auto-discovery.js";
 
 const SERVER_INSTRUCTIONS =
   "Everything2MCP is a protocol→MCP bridge. Agent-facing northbound is MCP only. Southbound priority: (1) E2MCP Partner protocol (apps do not speak MCP) (2) native OpenAPI adapters (3) mcp_bridge 兜底. Deploy is a minimal MCP core — capabilities are hot-added, not bulk-registered at boot. Prefer environment_inventory / compat_scan / partner_list → capability_register. Writes default allowWrite=false. Never scan CIDR. Scan never opens write/desktop/secrets.";
@@ -29,6 +30,8 @@ export interface Everything2Mcp {
   blacklist: BlacklistStore;
   security: SecurityPlane;
   auditLog: AuditLog;
+  /** S4 auto-discovery scheduler (auto | manual | off). */
+  discovery: AutoDiscovery;
   /** Extra MCP Server sharing the same registry (HTTP/SSE sessions). */
   createSessionServer: () => Server;
   releaseSessionServer: (server: Server) => Promise<void>;
@@ -67,6 +70,13 @@ export async function createEverything2McpServer(
   await security.restore();
 
   const mgmt = { registry, config, blacklist, security, auditLog };
+  const discovery = new AutoDiscovery({
+    ctx: mgmt,
+    dataDir: config.dataDir,
+    discoveryEnabled: config.discovery.enabled,
+    mode: config.discovery.mode,
+  });
+  await discovery.start();
   for (const dir of dropsDirsFor(config.dataDir)) {
     try {
       const picked = await pickupDrops(mgmt, dir);
@@ -105,6 +115,7 @@ export async function createEverything2McpServer(
     blacklist,
     security,
     auditLog,
+    discovery,
     createSessionServer: () => {
       const session = wireMcpServer(registry, config, blacklist, security, auditLog);
       liveServers.add(session);
@@ -121,6 +132,8 @@ export async function createEverything2McpServer(
       }
     },
     close: async () => {
+      discovery.stop();
+      await discovery.idle();
       unregisterAuditLog(config.dataDir);
       await auditLog.flush();
       await registry.shutdown();

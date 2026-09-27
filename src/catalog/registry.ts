@@ -9,7 +9,7 @@ import type {
   RegistrationRecord,
 } from "../runtime/types.js";
 import { inferIngress } from "./ingress.js";
-import { assertNotBlacklisted, type BlacklistStore } from "./blacklist.js";
+import { assertInvokeNotBlacklisted, assertNotBlacklisted, type BlacklistStore } from "./blacklist.js";
 import { JsonStore } from "./store.js";
 
 export interface LiveInstance {
@@ -27,6 +27,7 @@ export class ToolRegistry {
   private readonly live = new Map<string, LiveInstance>();
   private readonly toolIndex = new Map<string, ToolBinding>();
   private readonly failed = new Map<string, { record: RegistrationRecord; error: string }>();
+  private readonly disabled = new Map<string, RegistrationRecord>();
   private onChangeHandler: (() => void) | undefined;
 
   constructor(
@@ -41,6 +42,10 @@ export class ToolRegistry {
   async restore(): Promise<void> {
     const records = await this.store.load();
     for (const record of records) {
+      if (record.disabled === true) {
+        this.disabled.set(record.id, record);
+        continue;
+      }
       try {
         await this.mount(record);
       } catch (err) {
@@ -63,7 +68,7 @@ export class ToolRegistry {
   async add(protocol: string, name: string, config: JsonObject): Promise<LiveInstance> {
     await assertNotBlacklisted(this.blacklist, protocol, config);
     const id = makeId(protocol, name);
-    if (this.live.has(id)) {
+    if (this.live.has(id) || this.disabled.has(id)) {
       throw new AdapterError("E_CONFLICT", `Registration already exists: ${id}`, { details: { id } });
     }
     const now = new Date().toISOString();
@@ -84,7 +89,10 @@ export class ToolRegistry {
 
   async update(id: string, config: JsonObject): Promise<LiveInstance> {
     const record =
-      this.live.get(id)?.record ?? this.failed.get(id)?.record ?? (await this.findPersisted(id));
+      this.live.get(id)?.record ??
+      this.failed.get(id)?.record ??
+      this.disabled.get(id) ??
+      (await this.findPersisted(id));
     if (!record) throw new AdapterError("E_NOT_FOUND", `Unknown registration id: ${id}`, { details: { id } });
 
     const merged: RegistrationRecord = {
@@ -93,6 +101,13 @@ export class ToolRegistry {
       updatedAt: new Date().toISOString(),
     };
     await assertNotBlacklisted(this.blacklist, merged.protocol, merged.config);
+    if (merged.disabled === true) {
+      // Keep it off; config is saved and applied on the next 启用.
+      this.disabled.set(id, merged);
+      await this.store.upsert(merged);
+      this.emitChange();
+      return { record: merged, adapter: undefined as unknown as ProtocolAdapter, tools: [] };
+    }
     await this.unmount(id);
     const instance = await this.mount(merged);
     await this.store.upsert(merged);
@@ -101,10 +116,50 @@ export class ToolRegistry {
     return instance;
   }
 
+  /**
+   * Console enable toggle. Disabling unmounts the adapter (tools disappear from
+   * every list) but keeps the registration + config. Enabling re-mounts through
+   * the same blacklist gate as add(); a failed mount is kept as restore_failed.
+   */
+  async setEnabled(id: string, enabled: boolean): Promise<RegistrationRecord> {
+    const record =
+      this.live.get(id)?.record ?? this.failed.get(id)?.record ?? this.disabled.get(id) ?? (await this.findPersisted(id));
+    if (!record) throw new AdapterError("E_NOT_FOUND", `Unknown registration id: ${id}`, { details: { id } });
+    const now = new Date().toISOString();
+    if (!enabled) {
+      if (record.disabled === true && this.disabled.has(id)) return record;
+      await this.unmount(id);
+      this.failed.delete(id);
+      const next: RegistrationRecord = { ...record, disabled: true, updatedAt: now };
+      this.disabled.set(id, next);
+      await this.store.upsert(next);
+      this.emitChange();
+      return next;
+    }
+    if (this.live.has(id)) return this.live.get(id)!.record;
+    const { disabled: _d, ...rest } = record;
+    const next: RegistrationRecord = { ...rest, updatedAt: now };
+    await assertNotBlacklisted(this.blacklist, next.protocol, next.config);
+    this.disabled.delete(id);
+    try {
+      await this.mount(next);
+      this.failed.delete(id);
+    } catch (err) {
+      this.failed.set(id, { record: next, error: err instanceof Error ? err.message : String(err) });
+      await this.store.upsert(next);
+      this.emitChange();
+      throw err;
+    }
+    await this.store.upsert(next);
+    this.emitChange();
+    return next;
+  }
+
   async remove(id: string): Promise<boolean> {
-    const hadLive = this.live.has(id) || this.failed.has(id);
+    const hadLive = this.live.has(id) || this.failed.has(id) || this.disabled.has(id);
     await this.unmount(id);
     this.failed.delete(id);
+    this.disabled.delete(id);
     const hadStore = await this.store.remove(id);
     if (hadLive || hadStore) this.emitChange();
     return hadLive || hadStore;
@@ -142,6 +197,17 @@ export class ToolRegistry {
         status: "restore_failed",
         error: fail.error,
         ingress: inferIngress(fail.record.protocol, fail.record.config),
+      });
+    }
+    for (const rec of this.disabled.values()) {
+      adapters.push({
+        id: rec.id,
+        name: rec.name,
+        protocol: rec.protocol,
+        toolCount: 0,
+        tools: [],
+        status: "disabled",
+        ingress: inferIngress(rec.protocol, rec.config),
       });
     }
     adapters.sort((a, b) => a.id.localeCompare(b.id));
@@ -194,7 +260,7 @@ export class ToolRegistry {
 
   /** Live or restore-failed registration, if any. */
   getRecord(id: string): RegistrationRecord | undefined {
-    return this.live.get(id)?.record ?? this.failed.get(id)?.record;
+    return this.live.get(id)?.record ?? this.failed.get(id)?.record ?? this.disabled.get(id);
   }
 
   async invoke(toolName: string, args: Record<string, unknown>): Promise<unknown> {
@@ -206,7 +272,12 @@ export class ToolRegistry {
         details: { tool: toolName },
       });
     }
-    await assertNotBlacklisted(this.blacklist, inst.record.protocol, inst.record.config);
+    await assertInvokeNotBlacklisted(this.blacklist, {
+      protocol: inst.record.protocol,
+      config: inst.record.config,
+      adapterId: inst.record.id,
+      toolName,
+    });
     const rawTimeout = inst.record.config.timeoutMs;
     const timeoutMs = typeof rawTimeout === "number" && rawTimeout > 0 ? rawTimeout : undefined;
     return invokeWithMiddleware(() => inst.adapter.invoke(binding.localName, args), {

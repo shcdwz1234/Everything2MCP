@@ -6,9 +6,17 @@
 
 **Full 模式仍执行黑名单**（`builtin-blacklist.bypassInFullControl=false`）。`capability_register` / `mcp_add` / 发现一键注册走同一匹配。Agent `tools/list` / 默认 `mcp_list` 看不到已拉黑业务 tools；控制台可见。Agent 不能靠 `audience=console` 升级（[ADR 0002](adr/0002-actor-bound-audience.md)）。
 
-没有 CIDR / 网段扫描。黑名单按**单个** `protocol + host + port`（或规范化 url）精确匹配。
+## 三种粒度
 
-## 匹配规则
+| kind | id | 匹配 | 效果 |
+| --- | --- | --- | --- |
+| `target`（默认，兼容旧版） | `{protocol}\|{host}\|{port}` 或 `{protocol}\|url:{url}` | 下文「匹配规则」 | 挡新建 / 更新 / 发现注册；已挂实例的 invoke 被拒；自动发现候选不再出现 |
+| `capability` | `cap\|{adapterId}` | 注册 id 完全相等（如 `sqlite:scratch`） | 该实例的 tools 从 Agent 列表消失、invoke 被拒；同 id 再注册被拒。可以挡住没有网络目标的实例（SQLite 文件 / 内存库等） |
+| `tool` | `tool\|{pattern}` | 工具名精确匹配或 glob：`*` 匹配**一段**（以 `.` 分隔），`**` 匹配任意多段 | 命中的 tools 从 Agent 列表消失、invoke 被拒；不影响注册与同实例其它 tools。例：`redis.*.flushall`、`sqlite.demo.execute`、`s3.prod.**` |
+
+单独的 `*` / `**` 会被拒绝（那等于把所有工具拉黑）。控制台里：**能力 → 当前能力** 行上的「加入黑名单」= capability；tools 抽屉里的「屏蔽」= tool；**可支持能力** 候选上的「加入黑名单」= target。**能力 → 黑名单** tab 列出全部条目，一键解除。
+
+## 匹配规则（target）
 
 1. **protocol** 走 `canonicalProtocol`（`pg` → `postgres`，`enip` → `ethernetip`，`http` → `openapi`，…）。
 2. **host** 小写；去掉 IPv6 方括号与尾随点。
@@ -44,7 +52,10 @@
 | 已挂载适配器 `invoke` | 匹配则 `E_BLACKLISTED`，不打后端 |
 | `mcp_remove` | 不受影响（可以删掉已挂实例）。`capability_unregister` 同一路径；黑名单仍拦再注册 |
 
-控制台 Discovery 结果行可以「加入黑名单」；已拉黑行标记且没有一键注册按钮。`#/blacklist` 列表 + 解除拉黑。
+| Agent `tools/list` / `mcp_list`（audience=agent） | capability / tool 条目命中的 tools 被隐藏 |
+| 控制台 `GET /api/tools`（audience=console） | 仍列出，带 `blocked: true` + `blacklistId`，便于解除 |
+
+控制台发现结果与自动发现候选可以「加入黑名单」；已拉黑行标记且没有一键注册按钮。旧 hash `#/blacklist` 跳到 **能力 → 黑名单** tab。
 
 ## API
 
@@ -55,12 +66,18 @@
 | GET | `/api/blacklist/:id` | 从 list 中取一条 |
 | DELETE | `/api/blacklist/:id` | `mcp_blacklist_remove` |
 
-`POST` 体：`{ protocol, host?, port?, url?, reason? }`。至少要有 `protocol` + (`host`+`port` 或可解析的网络 `url`)。`id` 含 `|`，URL 里请 `encodeURIComponent`。
+`POST` 体：
+
+- target：`{ kind?: "target", protocol, host?, port?, url?, reason? }`，至少要有 `protocol` + (`host`+`port` 或可解析的网络 `url`)；
+- capability：`{ kind: "capability", adapterId, reason? }`；
+- tool：`{ kind: "tool", pattern, reason? }`。
+
+`id` 含 `|`，URL 里请 `encodeURIComponent`。`GET /api/blacklist` 同时返回按 kind 的计数。
 
 ## MCP
 
-- `mcp_blacklist_list` — 列出全部条目
-- `mcp_blacklist_add` — `{ protocol, host?, port?, url?, reason? }`
+- `mcp_blacklist_list` — 列出全部条目与 `counts`
+- `mcp_blacklist_add` — `{ kind?, protocol?, host?, port?, url?, adapterId?, pattern?, reason? }`（按 kind 取字段，见上）
 - `mcp_blacklist_remove` — `{ id }`
 
 `mcp_blacklist_add` / `mcp_blacklist_remove` 记在 mutating 管理层（和 `mcp_add` 一样），不是数据面写。
@@ -82,3 +99,17 @@
   ]
 }
 ```
+
+全部条目都是 `target` 时仍写 `version: 1`（与旧版本完全兼容）。出现 capability / tool 条目后写 `version: 2`，条目多出 `kind` 与 `adapterId` / `pattern`：
+
+```json
+{
+  "version": 2,
+  "entries": [
+    { "id": "tool|sqlite.demo.execute", "kind": "tool", "pattern": "sqlite.demo.execute", "protocol": "sqlite", "host": "", "port": 0, "reason": "console", "createdAt": "2026-09-27T13:18:20.070Z" },
+    { "id": "cap|sqlite:scratch", "kind": "capability", "adapterId": "sqlite:scratch", "protocol": "sqlite", "host": "", "port": 0, "reason": "console", "createdAt": "2026-09-27T13:18:23.740Z" }
+  ]
+}
+```
+
+读取时 v1 / v2 都接受；v1 条目（无 `kind`）一律按 `target` 处理。

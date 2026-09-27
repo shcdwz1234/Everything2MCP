@@ -46,7 +46,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 
 可选鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`，客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
 
-同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。页面：Dashboard / Adapters / Tools / Discovery / **`#/capabilities` 热加载** / **`#/partner` 伙伴** / Import / `#/audit` / `#/plan` / `#/blacklist` / `#/security` / 协议矩阵 / Settings。写操作需二次确认且仍受 `allowWrite`。**没有 CIDR 扫描 UI。** 南向 ingress 徽章：`partner` / `native` / `mcp_bridge`（兜底）。
+同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。一级页：**能力**（当前能力 / 可支持能力 / 黑名单 三 tab，摘要条计数与 tab 对应）、**活动**、**设置**（自动发现、安全模式）；Tools / Discovery / Import / 矩阵 / 审计 / 计划桥 / 安全 / 热加载 / 伙伴 收进侧栏「高级」。添加能力走按协议 `configSchema` 生成的向导，先**测试连接**再保存。写操作需二次确认且仍受 `allowWrite`。私网**自动发现**默认开启（自动 / 手动 / 关闭），规则见 [docs/DISCOVERY.md](docs/DISCOVERY.md#自动发现auto-discovery)。南向 ingress 徽章：`partner` / `native` / `mcp_bridge`（兜底）。
 
 开发模式：`npm run dev`（`tsx watch`，仍默认 stdio）。
 
@@ -55,8 +55,12 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
 | `EVERYTHING2MCP_DATA_DIR` | `data` | 注册持久化目录（JSON） |
-| `EVERYTHING2MCP_DISCOVERY_ENABLED` | `true` | 是否暴露 `discovery_probe` |
-| `EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` | **忽略** | **死变量**。不能打开 CIDR；设置了会打日志并强制 `allowScan=false` |
+| `EVERYTHING2MCP_DISCOVERY_ENABLED` | `true` | 是否暴露 `discovery_probe`；`false` 同时关闭自动发现 |
+| `EVERYTHING2MCP_DISCOVERY_MODE` | `auto` | 控制台自动发现：`auto` / `manual` / `off`（`node --test` 下默认 `off`） |
+| `EVERYTHING2MCP_DISCOVERY_INTERVAL_MIN` | `30` | 自动模式间隔（5–1440 分钟） |
+| `EVERYTHING2MCP_DISCOVERY_SCOPES` | — | 额外私网范围（主机 / 域名 / CIDR ≤ /16），逗号分隔 |
+| `EVERYTHING2MCP_DISCOVERY_EXCLUDE` | — | 自动发现排除列表 |
+| `EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` | **忽略** | **死变量**。不能让 Agent 工具接受 CIDR；设置了会打日志并强制 `allowScan=false` |
 | `EVERYTHING2MCP_DISCOVERY_TIMEOUT_MS` | `2500` | 单次探测超时 |
 | `EVERYTHING2MCP_TRANSPORT` | `stdio` | `stdio`（默认）/ `http` / `sse` |
 | `EVERYTHING2MCP_HTTP_HOST` | `127.0.0.1` | HTTP/SSE 绑定地址 |
@@ -92,7 +96,7 @@ catalog    →  runtime/bootstrap  →  adapters
 
 Boot **不会**把 os_info / docker / 本机盘点结果写进 catalog。增长与收缩走**同一条** Policy Gateway 管道：
 
-1. 控制台 `#/capabilities`：环境盘点或手动 config → 建议列表 → **确认**热加载（Safe+只读可勾 auto）。已挂能力可 **热卸载**（二次确认；不要求 `allowWrite`）。
+1. 控制台「高级 → 热加载」`#/hotload`（原 `#/capabilities`；日常添加用「能力 → + 添加」向导）：环境盘点或手动 config → 建议列表 → **确认**热加载（Safe+只读可勾 auto）。已挂能力可 **热卸载**（二次确认；不要求 `allowWrite`）。
 2. Agent：`environment_inventory` → `capability_register`（`auto:true` 仅 Safe + `allowWrite`/`allowShell`/`allowDesktop`/`allowReadSecrets` 非 true + 非黑名单）
 3. Agent / 控制台：`capability_unregister` `{ id }`（与 `mcp_remove` 同一 Catalog.remove；黑名单不拦卸载，但拦再注册）
 
@@ -113,8 +117,8 @@ Drops：`~/.everything2mcp/drops/*.json`（Windows `%LOCALAPPDATA%\everything2mc
 ## 安全（已锁定，不再重开）
 
 - **默认 Safe**。数据面默认 `allowWrite=false`。**Full ≠ 全局可写**（适配器 `assertCanWrite` 仍闸）。
-- **黑名单 ALWAYS on**，包括 Full（`bypassInFullControl=false`）。
-- **无 CIDR UI**；`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 死变量；transport 合同不变；无 shim。
+- **黑名单 ALWAYS on**，包括 Full（`bypassInFullControl=false`）。粒度：目标 / 能力实例 / 工具 glob（[docs/BLACKLIST.md](docs/BLACKLIST.md)）。
+- **Agent 工具只扫单主机**；`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 死变量。控制台自动发现只扫私网（网卡 ≤ /24、手动 ≤ /16、每轮上限），永不扫 link-local / 云 metadata；候选只读、默认不自动启用（L5 修订，见 [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md)）。transport 合同不变；无 shim。
 - **Actor-bound audience（Phase M）：** Agent 不能伪造 `audience=console` 看见已拉黑 tools。控制台 REST 写入 `actor.kind=console`。
 - 政策网关、HMAC 完整性（`security.json` / `blacklist.json` / `registrations.json`）、`audit.jsonl`、限流、密钥脱敏。
 - Plugin SPI：v1 **只加载 builtins**；`inject`/`replace` 钩子留给日后；非 builtin → `E_UNSUPPORTED`。**不做** v2 本地 JS / v3 npm、**不做** Agent 写 challenge。
@@ -174,7 +178,7 @@ MCP 使用 **stdio**。路径按本机修改（同步树在 `D:\Everything2MCP` 
 
 AsyncAPI / Sparkplug 示例见 `examples/streetlights.asyncapi.json`、`examples/sparkplug-node.json`。
 
-**不会做的事：** 默认扫描网段、扫 1–65535 全端口、探测云 metadata、mDNS 组播浏览、NFS。详见 `docs/DISCOVERY.md`、`docs/ROADMAP.md`。
+**不会做的事：** 让 Agent 扫网段、扫 1–65535 全端口、探测云 metadata、NFS 完整客户端。（私网范围与有界 mDNS/SSDP 组播只在控制台自动发现里做。）详见 `docs/DISCOVERY.md`、`docs/ROADMAP.md`。
 
 ## 管理工具
 
@@ -412,7 +416,7 @@ MVP 不包含 OAuth、密钥托管或多租户。
 
 ## 发现
 
-`discovery_scan_host` 只探测**单个 host**。网段 / CIDR / 通配符默认直接拒绝，并拦截 metadata IP。mDNS **组播**与 NFS **未实现**（组播等于扫网；NFS 无适配器）。设计见 `docs/DISCOVERY.md`。
+`discovery_scan_host` 只探测**单个 host**。网段 / CIDR / 通配符直接拒绝，并拦截 metadata IP。控制台**自动发现**（自动 / 手动 / 关闭）在私网范围内逐主机调用同一探测，结果进「能力 → 可支持能力」；link-local 与云 metadata 永不扫描，组播有界且只收私网应答者。设计见 `docs/DISCOVERY.md`。
 
 ## 仓库结构
 
@@ -424,7 +428,7 @@ src/discovery/     单主机探测；suggest/import 已挂成 MCP 工具
 src/runtime/       内核：types/errors/auth/load/log/invoke
 src/adapters/      SPI + 扁平协议实现 + 可选 pack 分组
 examples/          配置与 OpenAPI/WSDL/proto 夹具
-tests/             注册表 + 各适配器 + MCP 语义（~133 suites）
+tests/             注册表 + 各适配器 + MCP 语义（~140 suites）
 docs/              架构 / ADR / 协议目录 / 发现 / 安全 / 发布说明
 ui/                同进程控制台源；构建进 dist/ui
 ```
@@ -468,7 +472,7 @@ ui/                同进程控制台源；构建进 dist/ui
 - v2 本地 JS / v3 npm **外部安全插件加载**
 - MCP **Agent 写 challenge**（只有控制台 `confirm:true`）
 - **NFS** 完整客户端 / SHOWMOUNT（已有 NFSv3 NULL ping + simulator exports）
-- mDNS **组播浏览**（单播 `host:5353` 已有）
+- Agent 侧 mDNS **组播浏览**（单播 `host:5353` 已有；控制台自动发现有有界组播）
 - 部署时批量注册能力 / 默认打开桌面控制
 - `allowShell` / `allowDesktop` 真执行（只有闸与 stub；扫描从不打开）
 - SMB/CIFS 完整 TREE_CONNECT 文件客户端（已有 SMB2 NEGOTIATE + simulator）
@@ -477,11 +481,11 @@ ui/                同进程控制台源；构建进 dist/ui
 
 Everything2MCP is a single-process MCP server: **discover, register, invoke** heterogeneous protocols as MCP tools. **stdio is the default.** Set `EVERYTHING2MCP_TRANSPORT=http` (or `sse`) to serve Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and the same-process dark console at `/ui/` (REST under `/api/*`) on port `8742`. Optional `EVERYTHING2MCP_HTTP_TOKEN` requires `Authorization: Bearer` or `x-api-key`.
 
-**Phase X is current** (Partner protocol + Compat Catalog + native Feishu/DingTalk/WeCom/Slack/Notion/GitHub + mcp_bridge 兜底). Test baseline **133 suites / 545 tests**. Southbound is not MCP by default. Next work waits for an explicit continue.
+**Phase X + Console Redesign is current** (Partner protocol + Compat Catalog + native apps + mcp_bridge 兜底; console with 能力 / 活动 / 设置, schema-driven add wizard with test-connection, capability- and tool-level blacklist, private-network auto-discovery). Test baseline **140 suites / 570 tests** (Node 22). Southbound is not MCP by default. Next work waits for an explicit continue.
 
-Security (locked): Safe vs Full; blacklist always on (including Full); default `allowWrite=false`; Full ≠ global write; no CIDR UI; `ALLOW_SCAN` is dead; no shim; actor-bound audience so agents cannot spoof `audience=console`. Plugin SPI: builtins only in v1.
+Security (locked): Safe vs Full; blacklist always on (including Full) at target / capability / tool granularity; default `allowWrite=false`; Full ≠ global write; agent tools never accept CIDR and `ALLOW_SCAN` is dead; console auto-discovery (auto / manual / off) scans private ranges only (interfaces ≤ /24, manual ≤ /16, per-run host cap, never link-local or cloud metadata, candidates read-only); no shim; actor-bound audience so agents cannot spoof `audience=console`. Plugin SPI: builtins only in v1.
 
-Agents should prefer `mcp_plan_bridge`, `discovery_scan_host`, `mcp_add_from_discovery`, and `schema_import`. Discovery never scans network ranges or metadata IPs. Protocol honesty table: `docs/PROTOCOLS.md`. Unified error codes: `docs/ERRORS.md`.
+Agents should prefer `mcp_plan_bridge`, `discovery_scan_host`, `mcp_add_from_discovery`, and `schema_import`. Agent discovery tools never scan network ranges or metadata IPs. Protocol honesty table: `docs/PROTOCOLS.md`. Unified error codes: `docs/ERRORS.md`.
 
 ```bash
 npm install && npm run build && npm test

@@ -1,12 +1,17 @@
 import { PROTOCOL_CONFIG_HELP, canonicalProtocol, blacklistId, targetFromConfig, inferIngress } from "../catalog/index.js";
 import { looksLikeReadRpc } from "../adapters/rpc-gate.js";
 import { AdapterError, ERROR_CODE_HELP, ERROR_CODES, errorPayload } from "../runtime/errors.js";
-import { invokeAudit, invokeAuditEvents } from "../runtime/metrics.js";
+import { invokeAudit, invokeAuditEvents, recordSecurityEvent } from "../runtime/metrics.js";
 import { APP_NAME, APP_VERSION, type JsonObject, type McpToolSchema } from "../runtime/types.js";
 import { knownProtocols } from "../runtime/bootstrap.js";
-import { redactSecrets } from "./redact.js";
+import { redactSecrets, SECRET_MASK } from "./redact.js";
 import { MANAGEMENT_TOOL_NAMES, callManagementTool, managementToolSchemas, type ManagementContext } from "./tools.js";
 import { layerOf } from "./layers.js";
+import { allConfigSchemas, configSchemaFor, checkRequiredBySchema, missingRequiredFields } from "../catalog/config-schema.js";
+import { hasProtocol, createAdapter } from "../runtime/bootstrap.js";
+import { validateRegistration, assertNotBlacklisted } from "../catalog/index.js";
+import { assertConfigTargetsAllowed } from "./policy.js";
+import { capabilityBlacklistId } from "../catalog/blacklist.js";
 import {
   assertPartnerToken,
   partnerHeartbeat,
@@ -78,6 +83,24 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     return { status: 200, body: matrixPayload(ctx) };
   }
 
+  if (method === "GET" && path === "/api/protocols") {
+    return { status: 200, body: { ok: true, protocols: allConfigSchemas() } };
+  }
+
+  const protoOne = match(method, "GET", "/api/protocols/:id", path);
+  if (protoOne) {
+    return { status: 200, body: { ok: true, schema: protocolSchemaOrThrow(protoOne.id!) } };
+  }
+
+  const protoValidate = match(method, "POST", "/api/protocols/:id/validate", path);
+  if (protoValidate) {
+    return { status: 200, body: validateAgainstSchema(protoValidate.id!, asObject(body.config ?? body)) };
+  }
+
+  if (method === "POST" && path === "/api/adapters/test") {
+    return { status: 200, body: await testConnection(ctx, body) };
+  }
+
   if (method === "GET" && path === "/api/audit") {
     const rawLimit = Number(req.query.get("limit") ?? 50);
     const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
@@ -120,6 +143,11 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     };
   }
 
+  const toggle = match(method, "POST", "/api/adapters/:id/enabled", path) ?? match(method, "PUT", "/api/adapters/:id/enabled", path);
+  if (toggle?.id) {
+    return { status: 200, body: await setAdapterEnabled(ctx, toggle.id, body.enabled !== false) };
+  }
+
   const ping = match(method, "POST", "/api/adapters/:id/ping", path);
   if (ping?.id) return pingAdapter(ctx, ping.id);
 
@@ -132,18 +160,23 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "POST" && path === "/api/adapters") {
     const added = await callManagementTool("mcp_add", body, ctx);
+    consoleEvent(ctx, "capability.add", { adapterId: (added as { id?: string }).id, protocol: body.protocol });
     return { status: 201, body: { ...(added as object) } };
   }
 
   const put = match(method, "PUT", "/api/adapters/:id", path);
   if (put?.id) {
-    const updated = await callManagementTool("mcp_update", { id: put.id, config: body.config ?? body }, ctx);
+    const incoming = asObject(body.config ?? body);
+    const existing = ctx.registry.getRecord(put.id)?.config ?? {};
+    const updated = await callManagementTool("mcp_update", { id: put.id, config: unmaskConfig(existing, incoming) }, ctx);
+    consoleEvent(ctx, "capability.update", { adapterId: put.id });
     return { status: 200, body: updated };
   }
 
   const del = match(method, "DELETE", "/api/adapters/:id", path);
   if (del?.id) {
     const removed = await callManagementTool("mcp_remove", { id: del.id }, ctx);
+    consoleEvent(ctx, "capability.remove", { adapterId: del.id });
     return { status: 200, body: removed };
   }
 
@@ -188,6 +221,84 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
     return { status: 200, body: { ok: true, mode: ctx.security.mode(), modules: ctx.security.list() } };
   }
 
+  if (method === "GET" && path === "/api/discovery/settings") {
+    const d = requireAuto(ctx);
+    await d.load();
+    return { status: 200, body: { ok: true, settings: d.getSettings(), status: d.status(), scope: d.describe() } };
+  }
+
+  if ((method === "PUT" || method === "POST") && path === "/api/discovery/settings") {
+    const d = requireAuto(ctx);
+    const settings = await d.updateSettings(body as never);
+    return { status: 200, body: { ok: true, settings, status: d.status() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/status") {
+    const d = requireAuto(ctx);
+    await d.load();
+    return { status: 200, body: { ok: true, ...d.status() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/candidates") {
+    const d = requireAuto(ctx);
+    const all = await d.listCandidates();
+    const include = req.query.get("status");
+    const candidates = include === "all" ? all : all.filter((c) => c.status === (include ?? "new"));
+    return { status: 200, body: { ok: true, candidates, counts: d.counts() } };
+  }
+
+  if (method === "POST" && path === "/api/discovery/run") {
+    const d = requireAuto(ctx);
+    const wait = body.wait !== false;
+    if (!wait) {
+      void d.run("manual").catch(() => undefined);
+      return { status: 202, body: { ok: true, started: true, status: d.status() } };
+    }
+    const run = await d.run("manual");
+    return { status: 200, body: { ok: true, run, counts: d.counts() } };
+  }
+
+  if (method === "GET" && path === "/api/discovery/runs") {
+    const d = requireAuto(ctx);
+    await d.load();
+    const limit = Number(req.query.get("limit") ?? 20);
+    return { status: 200, body: { ok: true, runs: d.listRuns(Number.isFinite(limit) ? limit : 20) } };
+  }
+
+  const candEnable = match(method, "POST", "/api/discovery/candidates/:id/enable", path);
+  if (candEnable?.id) {
+    const d = requireAuto(ctx);
+    const result = await d.enable(candEnable.id, {
+      name: typeof body.name === "string" ? body.name : undefined,
+      config: body.config && typeof body.config === "object" && !Array.isArray(body.config) ? (body.config as JsonObject) : undefined,
+      credentials:
+        body.credentials && typeof body.credentials === "object" && !Array.isArray(body.credentials)
+          ? (Object.fromEntries(Object.entries(body.credentials as Record<string, unknown>).filter(([, v]) => typeof v === "string")) as Record<string, string>)
+          : undefined,
+    });
+    return { status: 201, body: result };
+  }
+
+  const candDismiss = match(method, "POST", "/api/discovery/candidates/:id/dismiss", path);
+  if (candDismiss?.id) {
+    const d = requireAuto(ctx);
+    return { status: 200, body: { ok: true, candidate: await d.dismiss(candDismiss.id) } };
+  }
+
+  const candRestore = match(method, "POST", "/api/discovery/candidates/:id/restore", path);
+  if (candRestore?.id) {
+    const d = requireAuto(ctx);
+    return { status: 200, body: { ok: true, candidate: await d.restore(candRestore.id) } };
+  }
+
+  if (method === "GET" && path === "/api/activity") {
+    return { status: 200, body: await activityPayload(ctx, Number(req.query.get("limit") ?? 100)) };
+  }
+
+  if (method === "GET" && path === "/api/overview") {
+    return { status: 200, body: await overviewPayload(ctx) };
+  }
+
   if (method === "POST" && path === "/api/discovery/scan") {
     const scanned = await callManagementTool("discovery_scan_host", body, ctx);
     return { status: 200, body: { ok: true, ...(scanned as object) } };
@@ -220,6 +331,8 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "POST" && path === "/api/blacklist") {
     const added = await callManagementTool("mcp_blacklist_add", body, ctx);
+    const entry = (added as { entry?: { id?: string; kind?: string } }).entry;
+    consoleEvent(ctx, "blacklist.add", { detail: entry?.id ?? "", blacklistKind: entry?.kind });
     return { status: 201, body: added };
   }
 
@@ -234,6 +347,7 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   const blDel = match(method, "DELETE", "/api/blacklist/:id", path);
   if (blDel?.id) {
     const removed = await callManagementTool("mcp_blacklist_remove", { id: blDel.id }, ctx);
+    consoleEvent(ctx, "blacklist.remove", { detail: blDel.id });
     return { status: 200, body: removed };
   }
 
@@ -345,12 +459,223 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   });
 }
 
+/** Console-initiated changes show up in 活动 (secrets never included: ids only). */
+function consoleEvent(ctx: ManagementContext, tool: string, extra: Record<string, unknown>): void {
+  recordSecurityEvent({ ok: true, kind: "policy", tool, actor: "console", ...extra, dataDir: ctx.config.dataDir });
+}
+
+/** 当前能力 row toggle: off keeps the registration but unmounts it (no Agent tools). */
+async function setAdapterEnabled(ctx: ManagementContext, id: string, enabled: boolean): Promise<Record<string, unknown>> {
+  const rec = ctx.registry.getRecord(id);
+  if (!rec) throw new AdapterError("E_NOT_FOUND", `Unknown registration id: ${id}`, { details: { id } });
+  await ctx.security.assert({
+    hook: enabled ? "register" : "unregister",
+    actor: { kind: "console", tokenPresent: true },
+    target: { protocol: rec.protocol, adapterId: id, config: rec.config },
+    config: rec.config,
+  });
+  await ctx.registry.setEnabled(id, enabled);
+  recordSecurityEvent({
+    ok: true,
+    kind: "policy",
+    tool: enabled ? "capability.enable" : "capability.disable",
+    adapterId: id,
+    protocol: rec.protocol,
+    detail: enabled ? "启用" : "停用 (registration kept)",
+    dataDir: ctx.config.dataDir,
+  });
+  const blocked = new Set((await ctx.blacklist.list()).map((e) => e.id));
+  const snap = ctx.registry.list().adapters.find((a) => a.id === id) ?? { id };
+  return { ok: true, id, enabled, adapter: decorateAdapter(ctx, id, snap, blocked) };
+}
+
+/**
+ * The console edits redacted configs. A value still equal to the mask means
+ * "unchanged": restore the stored secret instead of persisting "••••".
+ * Nested objects (auth: {...}) are merged the same way.
+ */
+export function unmaskConfig(existing: JsonObject, incoming: JsonObject): JsonObject {
+  const out: JsonObject = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === SECRET_MASK) {
+      if (existing[k] !== undefined) out[k] = existing[k]!;
+      continue;
+    }
+    const prev = existing[k];
+    if (v && typeof v === "object" && !Array.isArray(v) && prev && typeof prev === "object" && !Array.isArray(prev)) {
+      out[k] = unmaskConfig(prev as JsonObject, v as JsonObject);
+      continue;
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+function requireAuto(ctx: ManagementContext) {
+  if (!ctx.discovery) {
+    throw new AdapterError("E_UNSUPPORTED", "Auto-discovery engine is not running in this process");
+  }
+  return ctx.discovery;
+}
+
+/** 活动 page: audit ring + discovery runs, newest first. */
+async function activityPayload(ctx: ManagementContext, rawLimit: number): Promise<Record<string, unknown>> {
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 100;
+  const audit = ctx.auditLog?.snapshot(limit).events ?? invokeAuditEvents(limit);
+  const runs = ctx.discovery ? (await ctx.discovery.load(), ctx.discovery.listRuns(20)) : [];
+  const items: Array<Record<string, unknown>> = [
+    // discovery.<trigger> audit lines duplicate the run records below; keep settings changes.
+    ...audit
+      .filter((e) => !(e.kind === "discovery" && runs.length && /^discovery\.(auto|manual|startup)$/.test(e.tool ?? "")))
+      .map((e) => ({ type: e.kind === "discovery" ? "discovery" : e.kind ?? "invoke", ...e })),
+    ...runs.map((r) => ({
+      type: "discovery_run",
+      at: r.finishedAt ?? r.startedAt,
+      ok: r.ok,
+      tool: `discovery.${r.trigger}`,
+      detail: `hosts=${r.hostsScanned}/${r.hostsPlanned}${r.truncated ? " (capped)" : ""} found=${r.found} new=${r.newCount} offline=${r.offlineCount}`,
+      run: r,
+    })),
+  ];
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const counts = ctx.auditLog?.snapshot(limit).counts ?? invokeAudit();
+  return {
+    ok: true,
+    counts: { ...counts, errors: items.filter((i) => i.ok === false).length, discoveryRuns: runs.length },
+    items: items.slice(0, limit),
+  };
+}
+
+/**
+ * Summary strip for the 能力 page. Numbers match the three tabs:
+ * current = registered capabilities, supported = protocol catalog + ready
+ * discovered candidates, blacklist = all entries (target + capability + tool).
+ */
+async function overviewPayload(ctx: ManagementContext): Promise<Record<string, unknown>> {
+  const snap = ctx.registry.list();
+  const entries = await ctx.blacklist.list();
+  const blocked = new Set(entries.map((e) => e.id));
+  let blockedCaps = 0;
+  let enabled = 0;
+  let failing = 0;
+  let disabled = 0;
+  for (const a of snap.adapters) {
+    const d = decorateAdapter(ctx, a.id, a, blocked);
+    const off = (a.status as string) === "disabled" || d.disabled === true;
+    if (d.blacklisted) blockedCaps += 1;
+    else if (a.status === "live" && !off) enabled += 1;
+    if (off) disabled += 1;
+    else if (a.status !== "live") failing += 1;
+  }
+  const disc = ctx.discovery ? (await ctx.discovery.listCandidates(), ctx.discovery.counts()) : { discovered: 0, ready: 0, needsConfig: 0 };
+  const schemas = allConfigSchemas();
+  return {
+    ok: true,
+    current: { total: snap.adapters.length, enabled, disabled, blacklisted: blockedCaps, failing, tools: snap.tools.length },
+    supported: { discovered: disc.discovered ?? 0, ready: disc.ready ?? 0, needsConfig: disc.needsConfig ?? 0, failed: (disc as { failed?: number }).failed ?? 0, types: schemas.length },
+    blacklist: {
+      total: entries.length,
+      target: entries.filter((e) => (e.kind ?? "target") === "target").length,
+      capability: entries.filter((e) => e.kind === "capability").length,
+      tool: entries.filter((e) => e.kind === "tool").length,
+    },
+    discovery: ctx.discovery ? ctx.discovery.status() : { mode: "off" },
+  };
+}
+
+function protocolSchemaOrThrow(id: string) {
+  if (!hasProtocol(id)) {
+    throw new AdapterError("E_UNKNOWN_PROTOCOL", `Unknown protocol: ${id}`, { details: { protocol: id } });
+  }
+  return configSchemaFor(id);
+}
+
+/** Pure schema + validateProtocolConfig check. Never connects. */
+function validateAgainstSchema(id: string, config: JsonObject): Record<string, unknown> {
+  const schema = protocolSchemaOrThrow(id);
+  const missing = missingRequiredFields(id, config).map((f) => f.key);
+  let error: string | undefined = checkRequiredBySchema(id, config);
+  if (!error) {
+    try {
+      validateRegistration(id, "probe", config);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+  return { ok: !error, protocol: schema.protocol, missing, error };
+}
+
+/**
+ * Wizard "测试连接": same gates as mcp_add (validate, SSRF target check,
+ * security register hook, blacklist) then connect + listTools on a throwaway
+ * adapter instance. Nothing is persisted or exposed to the Agent.
+ */
+async function testConnection(ctx: ManagementContext, body: JsonObject): Promise<Record<string, unknown>> {
+  const protocol = typeof body.protocol === "string" ? body.protocol : "";
+  if (!protocol) throw new AdapterError("E_INVALID_ARGUMENT", "protocol is required");
+  protocolSchemaOrThrow(protocol);
+  const config = asObject(body.config);
+  const name = typeof body.name === "string" && body.name ? body.name : "test";
+  validateRegistration(protocol, name, config);
+  await assertConfigTargetsAllowed(config);
+  await ctx.security.assert({
+    hook: "register",
+    actor: { kind: "console", tokenPresent: true },
+    target: { protocol, config },
+    config,
+  });
+  await assertNotBlacklisted(ctx.blacklist, protocol, config);
+  const adapter = createAdapter(canonicalProtocol(protocol), `${canonicalProtocol(protocol)}:__test__`);
+  const started = Date.now();
+  const limit = typeof config.timeoutMs === "number" && config.timeoutMs > 0 ? Math.min(config.timeoutMs, 15_000) : 8_000;
+  try {
+    const tools = await withDeadline(
+      (async () => {
+        await adapter.connect(config);
+        return adapter.listTools();
+      })(),
+      limit,
+    );
+    const health = adapter.health ? await withDeadline(adapter.health(), limit).catch((e) => ({ ok: false, detail: String(e) })) : { ok: true };
+    return {
+      ok: health.ok !== false,
+      protocol: canonicalProtocol(protocol),
+      latencyMs: Date.now() - started,
+      toolCount: tools.length,
+      tools: tools.slice(0, 50).map((t) => t.name),
+      health,
+    };
+  } catch (err) {
+    const payload = errorPayload(err);
+    return { ok: false, protocol: canonicalProtocol(protocol), latencyMs: Date.now() - started, error: payload };
+  } finally {
+    await adapter.disconnect().catch(() => undefined);
+  }
+}
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new AdapterError("E_TIMEOUT", `Timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 async function listAdapters(ctx: ManagementContext): Promise<RestResponse> {
   const listed = (await callManagementTool("mcp_list", { layer: "business", verbose: true, audience: "console" }, ctx)) as {
     adapters: Array<Record<string, unknown>>;
     protocols: string[];
   };
   const blocked = new Set((await ctx.blacklist.list()).map((e) => e.id));
+  await ctx.discovery?.load();
   const adapters = listed.adapters.map((snap) => decorateAdapter(ctx, String(snap.id), snap, blocked));
   return { status: 200, body: { ok: true, adapters, protocols: listed.protocols } };
 }
@@ -373,21 +698,44 @@ function decorateAdapter(
 ): Record<string, unknown> {
   const record = ctx.registry.getRecord(id);
   let blacklisted = false;
+  let blacklistKind: "target" | "capability" | undefined;
+  let blacklistRef: string | undefined;
   if (record) {
     const target = targetFromConfig(record.protocol, record.config);
     if (target) {
       const key = blacklistId(target);
-      blacklisted = blocked ? blocked.has(key) : false;
+      if (blocked?.has(key)) {
+        blacklisted = true;
+        blacklistKind = "target";
+        blacklistRef = key;
+      }
+    }
+    const capKey = capabilityBlacklistId(id);
+    if (!blacklisted && blocked?.has(capKey)) {
+      blacklisted = true;
+      blacklistKind = "capability";
+      blacklistRef = capKey;
     }
   }
+  const ingress = record ? inferIngress(record.protocol, record.config) : undefined;
+  // 来源 column: discovery candidate → 自动发现, partner ingress → 伙伴, otherwise 手动.
+  const source = ctx.discovery?.registeredIds().has(id) ? "discovery" : ingress === "partner" ? "partner" : "manual";
+  // 地址 column: host:port only (never the raw URL, which may carry credentials).
+  const tgt = record ? targetFromConfig(record.protocol, record.config) : undefined;
+  const address = tgt?.host ? (tgt.port ? `${tgt.host}:${tgt.port}` : tgt.host) : undefined;
   return {
     ...snap,
     config: record?.config ?? {},
     createdAt: record?.createdAt,
     updatedAt: record?.updatedAt,
     allowWrite: record?.config.allowWrite === true,
-    ingress: record ? inferIngress(record.protocol, record.config) : undefined,
+    disabled: record?.disabled === true,
+    ingress,
+    source,
+    address,
     blacklisted,
+    blacklistKind,
+    blacklistId: blacklistRef,
   };
 }
 
@@ -470,7 +818,7 @@ function settingsPayload(ctx: ManagementContext): unknown {
     app: APP_NAME,
     version: APP_VERSION,
     dataDir: ctx.config.dataDir,
-    discovery: ctx.config.discovery,
+    discovery: { ...ctx.config.discovery, mode: ctx.discovery?.getSettings().mode ?? "off", auto: ctx.discovery?.status() },
     transport: {
       kind: t.kind,
       host: t.host,
@@ -490,6 +838,8 @@ function settingsPayload(ctx: ManagementContext): unknown {
     console: {
       wave: "X",
       ui: "/ui/",
+      redesign: true,
+      autoDiscovery: Boolean(ctx.discovery),
       discovery: true,
       import: true,
       plan: true,
@@ -535,6 +885,8 @@ function matrixPayload(ctx: ManagementContext): unknown {
         id,
         canonical,
         help: PROTOCOL_CONFIG_HELP[canonical] ?? PROTOCOL_CONFIG_HELP[id] ?? "",
+        title: configSchemaFor(canonical).title,
+        pack: configSchemaFor(canonical).pack,
         registered: byProto.get(canonical) ?? byProto.get(id) ?? 0,
       };
     })

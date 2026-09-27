@@ -87,4 +87,25 @@ export const rest = {
       body: JSON.stringify({ capability_id, confirm: true }),
     }),
   compatScan: () => api("/api/compat/scan", { method: "POST", body: "{}" }),
+  // S1 schemas
+  protocols: () => api("/api/protocols"),
+  protocol: (id: string) => api(`/api/protocols/${encodeURIComponent(id)}`),
+  validateConfig: (id: string, config: unknown) =>
+    api(`/api/protocols/${encodeURIComponent(id)}/validate`, { method: "POST", body: JSON.stringify({ config }) }),
+  testAdapter: (body: unknown) => api("/api/adapters/test", { method: "POST", body: JSON.stringify(body) }),
+  // S2 capability page
+  overview: () => api("/api/overview"),
+  setEnabled: (id: string, enabled: boolean) =>
+    api(`/api/adapters/${encodeURIComponent(id)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) }),
+  activity: (limit = 120) => api(`/api/activity?limit=${limit}`),
+  // S4 auto-discovery
+  discoverySettings: () => api("/api/discovery/settings"),
+  saveDiscoverySettings: (body: unknown) => api("/api/discovery/settings", { method: "PUT", body: JSON.stringify(body) }),
+  discoveryCandidates: (status = "new") => api(`/api/discovery/candidates?status=${encodeURIComponent(status)}`),
+  runDiscovery: (wait = true) => api("/api/discovery/run", { method: "POST", body: JSON.stringify({ wait }) }),
+  discoveryRuns: (limit = 20) => api(`/api/discovery/runs?limit=${limit}`),
+  enableCandidate: (id: string, body: unknown) =>
+    api(`/api/discovery/candidates/${encodeURIComponent(id)}/enable`, { method: "POST", body: JSON.stringify(body) }),
+  dismissCandidate: (id: string) =>
+    api(`/api/discovery/candidates/${encodeURIComponent(id)}/dismiss`, { method: "POST", body: "{}" }),
 };

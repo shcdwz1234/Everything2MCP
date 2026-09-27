@@ -1,8 +1,11 @@
 # 发现（Discovery）
 
-**当前快照：Phase X。** Environment Plane 是按需盘点。另见 `compat_scan`（[COMPAT.md](COMPAT.md)）与 Partner drops（[PARTNER.md](PARTNER.md)）。NFS 只有诚实 NULL ping。discovery **仍不**做组播。
+**当前快照：控制台改版。** 两条路径：
 
-默认：**单主机、有超时、有 SSRF 防护、拒绝 CIDR/网段**。mDNS 组播浏览不提供。NFS 组播/SHOWMOUNT 不提供。
+1. **Agent / 单主机发现**（不变）：`discovery_scan_host` 等管理工具只扫**一个** host，有超时、有 SSRF 防护，**拒绝 CIDR / 网段 / 通配符**。Agent 不能借它扫网段。
+2. **控制台自动发现**（新）：进程内调度器按 [下文规则](#自动发现auto-discovery) 扫**私网**，把结果列进「能力 → 可支持能力 → 已发现，可一键启用」。模式 自动 / 手动 / 关闭，默认自动（测试运行时默认关闭）。它把范围展开成单个主机，逐个走同一套单主机探测。
+
+另见 `compat_scan`（[COMPAT.md](COMPAT.md)）与 Partner drops（[PARTNER.md](PARTNER.md)）。NFS 只有诚实 NULL ping。Environment Plane 是按需盘点。
 
 ## 管理工具
 
@@ -19,7 +22,7 @@
 | `capability_register` | 热加载（confirm 或 Safe+readonly auto；Partner write/desktop 不能 auto） |
 | `capability_unregister` | 热卸载（与 `mcp_remove` 同一 `remove()`；不要求 allowWrite） |
 
-关掉发现：`EVERYTHING2MCP_DISCOVERY_ENABLED=false`（`mcp_plan_bridge` / `schema_import` / `mcp_health` 仍可用）。
+关掉发现：`EVERYTHING2MCP_DISCOVERY_ENABLED=false`（同时强制自动发现为 `off`；`mcp_plan_bridge` / `schema_import` / `mcp_health` 仍可用）。只关自动发现：`EVERYTHING2MCP_DISCOVERY_MODE=off` 或在「设置」里选 **关闭**。
 
 ## discovery_scan_host
 
@@ -61,7 +64,7 @@
 | SNMP | UDP **161** SNMPv2c GetRequest `sysDescr.0`（community `public`） |
 | etcd | HTTP **2379** `/version`（`etcdserver`）或 `/health` |
 | WebDAV | HTTP `OPTIONS` 认 `DAV` / `Allow: PROPFIND`（`/` `/dav` `/webdav`） |
-| SSDP | UDP **unicast** M-SEARCH `host:1900`（`upnp:rootdevice`）。**不**发 `239.255.255.250`，**不**组播浏览局域网 |
+| SSDP | UDP **unicast** M-SEARCH `host:1900`（`upnp:rootdevice`）。单主机工具**不**发 `239.255.255.250`（组播只在自动发现里、且有界） |
 | IMAP | TCP **143** 首包 `* OK`（含 IMAP 或默认端口） |
 | POP3 | TCP **110** 首包 `+OK`（含 POP 或默认端口） |
 | Consul | HTTP **8500** `/v1/status/leader` 或 `/v1/agent/self` |
@@ -92,12 +95,13 @@
 
 | 行为 | 默认 |
 | --- | --- |
-| CIDR / `10.0.0.1-254` / `*` / 逗号列表 | **永远拒绝**。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 是死变量：设置了只打 warning，`allowScan` 恒为 `false`；`assertHostProbeAllowed` 忽略第二参。循环扫描未实现 |
-| 云 metadata IP（`169.254.169.254`、`169.254.170.2`、`100.100.100.200`、`metadata.google.internal`） | **拒绝**（SSRF） |
+| CIDR / `10.0.0.1-254` / `*` / 逗号列表（Agent 工具与单主机向导） | **永远拒绝**。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 是死变量：设置了只打 warning，`allowScan` 恒为 `false`；`assertHostProbeAllowed` 忽略第二参 |
+| 私网范围扫描 | 只有控制台 **自动发现** 调度器会做，规则见 [自动发现](#自动发现auto-discovery)（私网、网卡 ≤ /24、手动 ≤ /16、每轮主机上限、公网需 `allowPublic`） |
+| 云 metadata IP（`169.254.169.254`、`169.254.170.2`、`100.100.100.200`、`metadata.google.internal`） | **拒绝**（SSRF）；自动发现逐主机过滤，即使落在 CGNAT 私网范围内也不扫 |
 | HTTP 重定向到 metadata | **拒绝**（`redirect: manual` + 逐跳校验） |
 | 端口全扫 1–65535 | 不提供 |
-| mDNS 组播浏览 | **禁用**（会变成网段发现）。用 `mdnsUnicastQuery` 打单个 `host:5353` |
-| SSDP | **单主机 unicast M-SEARCH :1900**；`mdnsDiscover()` 仍 `E_UNSUPPORTED` |
+| mDNS 组播浏览 | Agent 工具仍**不提供**（`mdnsDiscover()` 仍 `E_UNSUPPORTED`），单主机用 `mdnsUnicastQuery` 打 `host:5353`。自动发现在 `multicast` 开启时发一次有界查询（TTL=1，只收私网应答者） |
+| SSDP | Agent 工具：**单主机 unicast M-SEARCH :1900**。自动发现：同上有界组播 `ssdp:all` |
 | NFS | **无 SHOWMOUNT / 无组播指纹**。适配器 live 仅 NFSv3 NULL ping（需热加载，不是 scan 默认） |
 
 `looksLikeNetworkRange()` 与 `assertHostAllowed()` 在管理入口和 `scanHost`/`probeHost` 都会跑。
@@ -162,7 +166,7 @@ MCP `tools/list` 会列出两层，用 `_meta.layer` 区分：
 
 认证探测不在范围内：需要 header 才能 GET `/openapi.json` 时，直接把已知 URL 交给 `schema_import` 或 `mcp_add`。
 
-本机环境（不是远端 host）走 **Environment Plane**：`environment_inventory` → 建议列表 → `capability_register`（confirm，或 Safe+只读 `auto:true`）。热卸载走 `capability_unregister`。控制台同一条路：`#/capabilities`。
+本机环境（不是远端 host）走 **Environment Plane**：`environment_inventory` → 建议列表 → `capability_register`（confirm，或 Safe+只读 `auto:true`）。热卸载走 `capability_unregister`。控制台同一条路：「高级 → 热加载」`#/hotload`（原 `#/capabilities`）。
 
 ## Environment inventory（按需，不是 deploy hook）
 
@@ -182,3 +186,58 @@ MCP `tools/list` 会列出两层，用 `_meta.layer` 区分：
 | `suggestions` | 平台适配器 + 端口/包命中；config 强制只读闸 |
 
 建议列表 **不会**批量 `mcp_add`。热加载必须再走 `capability_register` 或控制台确认。
+
+## 自动发现（Auto-discovery）
+
+实现：`src/control/auto-discovery.ts`（调度、候选、启用）、`src/discovery/netscope.ts`（范围规则）、`src/discovery/multicast.ts`（有界组播）。设置持久化在 `dataDir/discovery.json`。
+
+### 模式
+
+| 模式 | 行为 |
+| --- | --- |
+| **自动** `auto`（默认） | 启动后跑一次，然后每 `intervalMinutes`（默认 30，范围 5–1440）跑一次 |
+| **手动** `manual` | 只在点「立即扫描」或 `POST /api/discovery/run` 时运行 |
+| **关闭** `off` | 不做任何网络发现（单主机向导仍可用） |
+
+默认值来源（优先级从高到低）：`EVERYTHING2MCP_DISCOVERY_ENABLED=false` → 强制 `off`；`EVERYTHING2MCP_DISCOVERY_MODE`（启动时生效，之后在 UI 保存设置即以保存值为准）；`dataDir/discovery.json`；否则 `auto`。在 `node --test` 下（`NODE_TEST_CONTEXT`）默认 `off`，测试不会扫网。
+
+### 扫什么（范围规则）
+
+- **私网地址**：`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`（RFC 1918）、`100.64.0.0/10`（CGNAT，按私网处理）、`127.0.0.0/8`、`fc00::/7`（ULA，仅单主机）。
+- **永不扫描**（即使 `allowPublic`）：`169.254.0.0/16` link-local、`fe80::/10`、云元数据地址（`169.254.169.254`、`fd00:ec2::254`、`metadata.google.internal` 等）。
+- **本机** `127.0.0.1`（`includeLocalhost`，默认开）。
+- **网卡所在私网**（`includeInterfaces`，默认开）：每块网卡的私网子网，最多 **/24**（更大的网段只取本机所在的 /24）。
+- **mDNS / SSDP 组播**（`multicast`，默认开）：向 `224.0.0.251:5353` 发 `_services._dns-sd._udp.local` 查询、向 `239.255.255.250:1900` 发 `ssdp:all`，TTL=1，只等待有限时间；**只接受私网应答者**，应答者作为待探测主机加入本轮。
+- **手动范围** `scopes`：主机、域名或 CIDR，CIDR 最大 **/16**。公网地址默认拒绝，需显式打开 `allowPublic`（仅对你有权扫描的网络）。
+- **排除** `exclude`：主机或 CIDR，优先于以上所有来源。
+- **每轮主机上限** `hostCap`（默认 256，最大 1024），超出部分截断并在运行记录标 `truncated`；并发 `concurrency`（默认 16）；单端口超时 `timeoutMs`（默认 800 ms）。
+- **协议** `protocols`：默认 openapi / graphql / grpc / redis / mqtt / nats / postgres / mysql / sqlserver / mongodb / elasticsearch / clickhouse / qdrant / s3 / prometheus / kafka / amqp / opcua / modbus / consul / etcd / couchdb / influx / rabbitmq，只打这些协议的常见端口（不是全端口扫描）。
+
+每个主机仍走 `discovery_scan_host` 同一实现（含 SSRF / metadata 拦截）。安全平面 `discover` 钩子**每轮评估一次**（不是每个主机一次，避免一轮扫描耗尽每分钟配额）；黑名单按目标逐个过滤。
+
+### 候选
+
+- 每个 `(protocol, host, port)` 一条候选，记录首次 / 最近发现、在线状态；连续 10 轮未见且未启用的候选被清理。
+- 草案一律 `allowWrite=false`。
+- 命中黑名单（目标级）的候选不出现。
+- **需要配置**：通常需要凭据的协议（postgres / mysql / sqlserver / s3 / amqp）在没有凭据时、草案缺必填字段时、或探测看到鉴权提示时。卡片只出缺的字段（例如用户名 / 密码，会合并进 URL 或 config）。
+- **一键启用** 走 `capability_register`（同 `mcp_add`：校验、SSRF、安全钩子、黑名单）。失败时原因（错误码 + 信息，不含密钥）留在候选卡片上并标 **启用失败**（例如某些适配器只有 simulator、没有 live 客户端），成功后清除。
+- **自动启用**（`autoEnable`，默认关）：只会自动启用「无需配置 + 只读」的候选。
+- **忽略** 把候选移出列表（可恢复）；**加入黑名单** 以后不再出现。
+- 每轮运行写一条审计事件（kind=`discovery`），在「活动」和「设置 → 运行历史」可见。
+
+### 环境变量
+
+| 变量 | 作用 |
+| --- | --- |
+| `EVERYTHING2MCP_DISCOVERY_MODE` | `auto` / `manual` / `off` |
+| `EVERYTHING2MCP_DISCOVERY_INTERVAL_MIN` | 自动模式间隔（分钟，5–1440，默认 30） |
+| `EVERYTHING2MCP_DISCOVERY_SCOPES` | 额外手动范围，逗号或空白分隔 |
+| `EVERYTHING2MCP_DISCOVERY_EXCLUDE` | 排除列表，逗号或空白分隔 |
+| `EVERYTHING2MCP_DISCOVERY_ENABLED=false` | 关闭所有发现（含自动发现） |
+
+`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 仍是死变量：它**不能**让 Agent 工具接受 CIDR；自动发现的范围只由上面的设置控制。
+
+### REST
+
+`GET/PUT /api/discovery/settings`、`GET /api/discovery/status`、`GET /api/discovery/candidates`、`POST /api/discovery/run`、`GET /api/discovery/runs`、`POST /api/discovery/candidates/:id/enable|dismiss|restore`。见 [CONSOLE.md](CONSOLE.md#rest)。

@@ -1,16 +1,16 @@
 # 安全架构
 
-**当前快照：Phase X。** 热加载走 Policy Gateway。`auto:true` **不能**在 Full / 可写 / Partner `riskCeiling=write|desktop` / 黑名单时自动注册。扫描与 Compat **不**授予 write/desktop/secrets。个人微信私聊不是 Partner 兼容面。
+**当前快照：控制台改版。** 黑名单扩展为目标 / 能力实例 / 工具三种粒度（仍在 Full 下生效）；新增控制台私网**自动发现**（L5 修订，见下）；能力可**停用**（保留注册）。热加载走 Policy Gateway。`auto:true` **不能**在 Full / 可写 / Partner `riskCeiling=write|desktop` / 黑名单时自动注册。扫描与 Compat **不**授予 write/desktop/secrets。个人微信私聊不是 Partner 兼容面。
 
-S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。Phase M 把 audience 绑到 actor。本文仍是实现合同；**S3/S4（外部 JS/npm）有意不做**（v1 builtins only）。不重开 CIDR UI / `ALLOW_SCAN` / shim / 全局写。
+S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。Phase M 把 audience 绑到 actor。本文仍是实现合同；**S3/S4（外部 JS/npm）有意不做**（v1 builtins only）。不重开 `ALLOW_SCAN` / shim / 全局写；Agent 侧 CIDR 仍永不放行（控制台自动发现见 L5 修订）。
 
 原则：
 
-- **默认 Safe**。数据面默认 `allowWrite=false`。没有 CIDR / 网段扫描 UI。
+- **默认 Safe**。数据面默认 `allowWrite=false`（自动发现的候选也一律只读）。
 - **deny-wins**：任一模块 `deny` 即拒绝。
 - **锁定模块不可关、不可在 Full 下 bypass**：`core-auth` / `core-audit` / `core-integrity`。
 - **内置黑名单在 Full 下同样生效**（`bypassInFullControl: false`）。不是 core 锁定模块（控制台仍可增删条目），但模式不能跳过它。
-- **CIDR 永不放行**（Safe 与 Full 一样）。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 是**死变量**：`loadAppConfig` 与 `createEverything2McpServer` 强制 `allowScan=false`，`assertHostProbeAllowed` 忽略第二参。控制台永不提供网段输入。
+- **Agent 侧 CIDR 永不放行**（Safe 与 Full 一样）。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 是**死变量**：`loadAppConfig` 与 `createEverything2McpServer` 强制 `allowScan=false`，`assertHostProbeAllowed` 忽略第二参。网段只在控制台**自动发现**里、按私网规则展开（L5 修订）。
 - **Full ≠ 全局可写**（L6）。平面 `allow-write` 可在 Full 跳过；适配器 `assertCanWrite` / `allowWriteFrom` **仍闸写**。
 - **热加载优先**：模式、安全模块、黑名单条目都不要求重启进程。
 - **不把 mode 暴露成普通 MCP tool**。
@@ -26,10 +26,10 @@ S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热
 | # | 决策 |
 | --- | --- |
 | L1 | **Full 仍执行黑名单。** 内置模块 id 建议 `builtin-blacklist`（下文亦写 `blacklist`）。`bypassInFullControl` **必须为 `false`**。`locked` 为 `false`：操作员可通过控制台管理条目，但不能靠切 Full 关掉评估。 |
-| L2 | **黑名单语义（Safe 与 Full 相同）：** ① 不能再 `mcp_add` / `capability_register` / POST `/api/adapters` / POST `/api/capabilities/register` / 发现一键注册命中目标；② **不对 Agent 暴露**这些适配器的业务 tools：`tools/list` / `mcp_list` 过滤掉，`invoke` / `tools/call` deny（`E_BLACKLISTED`）；③ **控制台**可以列表、加入、解除拉黑（现有 `#/blacklist` 与 `mcp_blacklist_*` / `/api/blacklist`）。 |
+| L2 | **黑名单语义（Safe 与 Full 相同）：** ① 不能再 `mcp_add` / `capability_register` / POST `/api/adapters` / POST `/api/capabilities/register` / 发现一键注册命中目标；② **不对 Agent 暴露**这些适配器的业务 tools：`tools/list` / `mcp_list` 过滤掉，`invoke` / `tools/call` deny（`E_BLACKLISTED`）；③ **控制台**可以列表、加入、解除拉黑（「能力 → 黑名单」tab 与 `mcp_blacklist_*` / `/api/blacklist`；另有能力实例与工具粒度，见 BLACKLIST.md）。 |
 | L3 | **插件 SPI 按可对外 inject / replace 设计。** v1 **只交付内置模块**；加载器与配置钩子（`inject` / `replace` / `remove` / `security.json` 的 `modules[]`）先留接口，拒绝非 builtin 源，不实现本地 JS / npm 执行。 |
 | L4 | **热加载优先：** 改 mode、inject/replace 模块、增删黑名单，均在下一跳 hook（及下一次 `tools/list`）生效，不重启进程。黑名单文件与内存 store 以热读为准。 |
-| L5 | **CIDR 永不放行**（两模式）。无网段 UI。`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 不能重新打开。 |
+| L5 | **Agent 侧 CIDR 永不放行**（两模式）。`discovery_scan_host` / `discovery_probe` / 单主机向导只接受一个 host；`EVERYTHING2MCP_DISCOVERY_ALLOW_SCAN` 不能重新打开。**修订（控制台改版，用户批准）：** 控制台「设置 → 自动发现」可以扫私网——RFC1918 / CGNAT / 本机，网卡子网 ≤ /24，手动 CIDR ≤ /16，每轮主机上限（默认 256，最大 1024），公网需显式 `allowPublic`；link-local 与云 metadata 永不扫描；mDNS / SSDP 组播有界（TTL=1，只收私网应答者）。范围只能由控制台（actor=console）或启动环境变量配置，Agent 没有入口；每轮过 `discover` 钩子一次；发现结果只进候选列表、只读，默认不自动启用。规则见 [DISCOVERY.md](DISCOVERY.md#自动发现auto-discovery)。 |
 | L6 | **Full ≠ 全局写开。** 平面模块 `allow-write` 标了 `bypassInFullControl`（Full 跳过平面层 deny）。适配器仍走 `assertCanWrite` / `allowWriteFrom`，默认 `allowWrite=false`。切 Full **不得**把现有注册改成可写，也不得省略适配器写闸。 |
 
 与旧脑暴稿不一致处（例如「Full 可 bypass 黑名单」「Full 下新建可不拦」「切 Full 等于 root / 全局 allowWrite」）作废，以本表为准。
@@ -47,11 +47,12 @@ S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热
 | 审计 | invoke / 管理变更写入审计 | **仍要**（`core-audit` 锁定） |
 | Integrity | 目录与安全状态校验 | **仍要**（`core-integrity` 锁定） |
 | `bypassInFullControl` 模块 | 全部生效 | 可跳过（见 §5）。**未**标 bypass 的模块照常评估 |
-| CIDR / 网段 / `*` / 逗号列表 | 拒绝 | **仍拒绝**。Full 不能打开网段扫描 |
+| CIDR / 网段 / `*` / 逗号列表（Agent 工具） | 拒绝 | **仍拒绝**。Full 不能让 Agent 扫网段 |
+| 控制台自动发现 | 按私网规则（L5 修订） | 同 Safe，Full 不放宽范围规则 |
 | 黑名单 `builtin-blacklist` | 拦新建、发现一键添加、**从 Agent 工具列表隐藏**、**invoke deny** | **同样全部生效**（L1 / L2）。Full 不跳过 |
 | `allowWrite` | 适配器未显式 `true` 则写路径失败 | **仍尊重**每适配器 `allowWrite`（L6）。平面 `allow-write` 在 Full 跳过；`assertCanWrite` 不跳过 |
 
-Full **不是** root：不能关 Token、不能关审计、不能关 integrity、不能做 CIDR、**不能跳过黑名单**、**不能全局打开写**。能做的是跳过标了 `bypassInFullControl` 的**其它**策略模块（`allow-write` 平面层、`dangerous-tools` challenge、`rate-limit` stub）。写路径最后一道闸永远是适配器 `assertCanWrite`。
+Full **不是** root：不能关 Token、不能关审计、不能关 integrity、不能让 Agent 做 CIDR、**不能跳过黑名单**、**不能全局打开写**。能做的是跳过标了 `bypassInFullControl` 的**其它**策略模块（`allow-write` 平面层、`dangerous-tools` challenge、`rate-limit` stub）。写路径最后一道闸永远是适配器 `assertCanWrite`。
 
 切换必须：
 
@@ -252,9 +253,9 @@ export interface SecurityFile {
 | `core-audit` | 全部（决策后记 `policy` / `mode_change`） | 否 | 是 | `src/runtime/metrics.ts` `invokeAudit` + `dataDir/audit.jsonl` 追加（启动重载）；`GET /api/audit` / `#/audit`。进程内环形截断 200 条作即时视图；**账本不封 audit.jsonl**（有意） |
 | `core-integrity` | discover, register, import, invoke, modeChange + 启动 restore / reload | 否 | 是 | `IntegrityLedger`：默认 SHA-256（无密钥时首次见到封存）。`EVERYTHING2MCP_INTEGRITY_KEY` 或 `dataDir/.integrity-key` → HMAC-SHA256，账本带 `mac`；改目标或 `integrity.json` 都失败。监视 `security.json` / `blacklist.json` / `registrations.json` |
 | `allow-write` | invoke | **是**（仅平面层） | 否 | 平面 deny「`allowWrite` 不是 true」。Full 跳过**这一层**。适配器 `assertCanWrite` **仍闸**（L6） |
-| `builtin-blacklist` | discover, register, list, invoke | **否（L1）** | 否 | `BlacklistStore`、`assertNotBlacklisted`、`decorateCandidates`、`hideAgentTools`；`E_BLACKLISTED` |
+| `builtin-blacklist` | discover, register, list, invoke | **否（L1）** | 否 | `BlacklistStore`（kind = target / capability / tool）、`assertNotBlacklisted`、`matchSubject`、`decorateCandidates`、`hideAgentTools`；tool glob 只在 list / invoke 生效；`E_BLACKLISTED` |
 | `ssrf` | discover, register, import | 否 | 否（默认永不关） | `src/runtime/ssrf.ts`：云 metadata / link-local |
-| `discovery-scope` | discover | **否（CIDR 永不放行）** | 视为产品硬约束 | `looksLikeNetworkRange` + `assertHostProbeAllowed`；`allowScan` 死变量 |
+| `discovery-scope` | discover | **否（Agent 侧 CIDR 永不放行）** | 视为产品硬约束 | `looksLikeNetworkRange` + `assertHostProbeAllowed`；`allowScan` 死变量。控制台自动发现的范围规则在 `src/discovery/netscope.ts`（L5 修订） |
 | `dangerous-tools` | invoke | 是（跳过 challenge） | 否 | 控制台 REST 仍要求 `confirm:true`（在平面之外）；MCP Agent 没有确认 UI |
 | `secret-redact` | register, invoke, import, list, modeChange | 否 | 否 | 审计 JSONL / 进程日志 / REST 响应走 `redactSecrets`（token、password 等） |
 | `rate-limit` | invoke, discover | **是**（L：Full 可跳过） | 否 | 滑窗：默认 60 invoke / 20 discover 每分钟；`0` = 不限；env `EVERYTHING2MCP_RATE_LIMIT_*` |
@@ -289,15 +290,15 @@ export interface SecurityFile {
 | 区块 | 内容 |
 | --- | --- |
 | 模式 | 大号 Safe / Full 开关。当前模式胶囊（顶栏亦可：`SAFE` / `FULL`） |
-| 切换 | 必须二次确认文案：「Full 仍要 Token、审计与**黑名单**；不会打开 CIDR。」确认后 `POST` 专用 API（热生效） |
+| 切换 | 必须二次确认文案：「Full 仍要 Token、审计与**黑名单**；不会让 Agent 扫网段。」确认后 `POST` 专用 API（热生效） |
 | 锁定模块 | 只读表：auth / audit / integrity 永远开 |
 | 可 bypass 模块 | 列出 **rate-limit 等**及「Full 下是否跳过」。**不要**把黑名单画成可跳过 |
-| 黑名单 | 链到已有 `#/blacklist`（L2：控制台可管理）。写明「Agent 看不到已拉黑目标的 tools」 |
+| 黑名单 | 链到 **能力 → 黑名单** tab（L2：控制台可管理）。写明「Agent 看不到已拉黑目标 / 能力 / 工具」 |
 | 模块 | v1 只读内置表；预留「加载外部模块」灰态 |
-| CIDR | **没有输入框**。写死「单主机；网段扫描关闭」 |
+| CIDR | 安全页与单主机向导**没有网段输入**。私网范围只在「设置 → 自动发现」（L5 修订） |
 | 审计 | 最近 `modeChange` / 模块 reload + 链到 `#/audit` |
 
-Settings（`#/settings`）保持进程只读；安全页才是唯一改 mode 的地方。Discovery 页继续只有单个 host。
+「设置」页可改自动发现设置并提供 Safe / Full 切换入口（同一二次确认 + 专用 API）；Discovery 页（高级）继续只有单个 host。
 
 模式**不**出现在 `mcp_list` 默认业务层，也**不**做成 `mcp_set_mode` 一类普通管理 tool。若日后必须给自动化用，走带 token 的 REST，且默认不进 Agent 工具列表。
 
@@ -308,7 +309,7 @@ Settings（`#/settings`）保持进程只读；安全页才是唯一改 mode 的
 | ID | 威胁 | 主要控制 | 现状 |
 | --- | --- | --- | --- |
 | T1 | 未授权 HTTP 调用管理/业务 API | `core-auth` token | 有（可选 token） |
-| T2 | Agent 扫网段 / 打 metadata | `discovery-scope` + `ssrf` | 有；`ALLOW_SCAN` **硬禁用**（env / override 都不能打开 CIDR） |
+| T2 | Agent 扫网段 / 打 metadata | `discovery-scope` + `ssrf` + netscope | 有；`ALLOW_SCAN` **硬禁用**（env / override 都不能让 Agent 做 CIDR）。自动发现只扫私网、永不扫 link-local / metadata，范围只能由控制台设置 |
 | T3 | 把危险主机一键注册进 catalog | `builtin-blacklist` + `ssrf` on register | 有黑名单 + SSRF |
 | T4 | 已挂载实例仍被调用或出现在 tools/list | `builtin-blacklist` on list + invoke；`allow-write` | Agent list 隐藏；控制台仍可见；invoke deny |
 | T5 | 模型乱写（SQL / RPC / 队列） | `allow-write` + `dangerous-tools` + 控制台 challenge | 有硬闸；challenge 仅控制台 |
@@ -362,7 +363,7 @@ Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent �
 
 ## 10. 与黑名单功能的关系
 
-黑名单已经落地（`docs/BLACKLIST.md`）：`dataDir/blacklist.json`，匹配 `canonical protocol + 规范化 host + port`（或规范化 url），REST `/api/blacklist`，MCP `mcp_blacklist_*`，控制台 `#/blacklist` 与 Discovery「加入黑名单」。
+黑名单已经落地（`docs/BLACKLIST.md`）：`dataDir/blacklist.json`，匹配 `canonical protocol + 规范化 host + port`（或规范化 url），REST `/api/blacklist`，MCP `mcp_blacklist_*`，控制台「能力 → 黑名单」tab、当前能力行 / tools 抽屉 / 发现候选上的「加入黑名单」。改版后另有 `kind=capability`（`cap|<adapterId>`）与 `kind=tool`（glob）。
 
 在本架构里它是 **`builtin-blacklist` 模块**，不是平行宇宙，也不是 Full 逃生口：
 

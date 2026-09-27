@@ -1,32 +1,31 @@
-import { mkdir, copyFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+#!/usr/bin/env node
+// Cross-platform replacement for `mkdir -p … && cp …` in the build scripts.
+// Usage: node scripts/copy-assets.mjs [protos|ui|all]   (default: all)
+import { copyFileSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const groups = {
+  protos: [
+    ["src/adapters/sparkplug/sparkplug_b.proto", "dist/adapters/sparkplug/sparkplug_b.proto"],
+    ["src/adapters/pulsar/PulsarApi.proto", "dist/adapters/pulsar/PulsarApi.proto"],
+  ],
+  ui: [
+    ["ui/index.html", "dist/ui/index.html"],
+    ["ui/styles.css", "dist/ui/styles.css"],
+  ],
+};
 
-async function copy(srcRel, destRel) {
-  const src = join(root, srcRel);
-  const dest = join(root, destRel);
-  await mkdir(dirname(dest), { recursive: true });
-  await copyFile(src, dest);
+const which = process.argv[2] ?? "all";
+const selected = which === "all" ? Object.values(groups).flat() : groups[which];
+if (!selected) {
+  console.error(`copy-assets: unknown group "${which}" (use protos | ui | all)`);
+  process.exit(2);
 }
-
-const mode = process.argv[2] ?? "all";
-
-if (mode === "proto" || mode === "all") {
-  await copy(
-    "src/adapters/sparkplug/sparkplug_b.proto",
-    "dist/adapters/sparkplug/sparkplug_b.proto",
-  );
-  await copy(
-    "src/adapters/pulsar/PulsarApi.proto",
-    "dist/adapters/pulsar/PulsarApi.proto",
-  );
+for (const [from, to] of selected) {
+  const dest = join(root, to);
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(join(root, from), dest);
 }
-
-if (mode === "ui" || mode === "all") {
-  await copy("ui/index.html", "dist/ui/index.html");
-  await copy("ui/styles.css", "dist/ui/styles.css");
-}
-
-console.log(`copy-assets (${mode}) done`);
+console.log(`copy-assets: ${selected.length} file(s) (${which})`);

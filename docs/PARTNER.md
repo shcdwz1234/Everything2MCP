@@ -1,6 +1,6 @@
 # Partner protocol v1
 
-**Phase X.** Southbound apps do **not** implement MCP. The Agent still talks to **one** Everything2MCP over MCP (stdio / Streamable HTTP / SSE). Test baseline: **133 suites / 545 tests** (`npm test`).
+**Phase X.** Southbound apps do **not** implement MCP. The Agent still talks to **one** Everything2MCP over MCP (stdio / Streamable HTTP / SSE). Test baseline: **140 suites / 570 tests** (`npm test`, after the console redesign).
 
 ## Southbound priority (hard)
 
