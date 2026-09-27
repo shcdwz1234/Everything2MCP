@@ -1,5 +1,5 @@
 import type { JsonObject } from "../runtime/types.js";
-import { canonicalProtocol } from "./validate.js";
+import { PROTOCOL_CONFIG_HELP, canonicalProtocol } from "./validate.js";
 import { knownProtocols } from "../runtime/bootstrap.js";
 import { inferIngress, type IngressKind } from "./ingress.js";
 import { packForProtocol } from "../adapters/packs.js";
@@ -353,20 +353,170 @@ const GENERIC_REQUIRED: Record<string, string[][]> = {
   partner: [["operations", "manifest", "capability_id"]],
 };
 
-/** Field templates keyed by the "type" family for the generic fallback. */
-function genericFields(_protocol: string): ConfigField[] {
+const NUMBER_KEYS = new Set(["port", "timeoutMs", "unitId", "rack", "slot", "deviceId", "maxBytes", "heartbeatTtlMs", "poolMax"]);
+const BOOL_KEYS = new Set([
+  "simulator", "native", "unsigned", "tls", "starttls", "raw", "tcp", "udp", "allowShell", "allowDesktop",
+  "allowReadSecrets", "reflection", "bind",
+]);
+const ARRAY_KEYS = new Set(["brokers", "servers", "operations", "tags", "devices", "roots", "topics"]);
+const OBJECT_KEYS = new Set(["headers", "auth", "invoke", "mcpServers"]);
+const SECRET_KEYS = new Set(["password", "token", "secretKey", "accountKey", "sasToken", "key", "apiKey"]);
+const PRIMARY_KEYS = new Set([
+  "url", "host", "bucket", "container", "queue", "topic", "spec", "endpoint", "filename", "path", "driver",
+  "brokers", "servers", "capability_id", "operations", "invoke", "xml", "fixture", "token", "user", "password",
+  "accessKey", "secretKey", "port", "community", "namespace", "project", "org", "owner", "repo", "database",
+]);
+
+const FIELD_LABEL: Record<string, string> = {
+  url: "URL",
+  host: "主机 host",
+  port: "端口 port",
+  user: "用户名 user",
+  password: "密码 password",
+  token: "令牌 token",
+  simulator: "模拟器 simulator",
+  timeoutMs: "超时 timeoutMs",
+  bucket: "Bucket",
+  endpoint: "Endpoint",
+};
+
+/** Parse "{ a, b? | simulator:true, c?: x|y }  (note)" into fields + summary. */
+export function parseConfigHelp(help: string): { keys: Array<{ key: string; optional: boolean; enum?: string[] }>; note: string } {
+  const open = help.indexOf("{");
+  let close = -1;
+  if (open >= 0) {
+    let depth = 0;
+    for (let i = open; i < help.length; i++) {
+      if (help[i] === "{") depth++;
+      else if (help[i] === "}" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  const rawInside = open >= 0 && close > open ? help.slice(open + 1, close) : "";
+  // Drop nested {...} and (...) so their commas / pipes do not split top-level keys.
+  let inside = rawInside;
+  for (let guard = 0; guard < 5 && /[{(][^{}()]*[})]/.test(inside); guard++) {
+    inside = inside.replace(/\{[^{}]*\}/g, "").replace(/\([^()]*\)/g, "");
+  }
+  const note = (close > 0 ? help.slice(close + 1) : "").trim().replace(/^\(/, "").replace(/\)$/, "").trim();
+  const keys: Array<{ key: string; optional: boolean; enum?: string[] }> = [];
+  const seen = new Set<string>();
+  for (const part of inside.split(/,|\s\|\s/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)(\[\])?(\?)?\s*(?::\s*(.*))?$/.exec(part.trim());
+    if (!m) continue;
+    const key = m[1]!;
+    if (key === "allowWrite" || seen.has(key)) continue;
+    seen.add(key);
+    const rest = (m[4] ?? "").trim();
+    const en = rest && /^[a-z0-9_-]+(\|[a-z0-9_-]+)+$/i.test(rest) ? rest.split("|") : undefined;
+    keys.push({ key, optional: Boolean(m[3]) || rest === "true", enum: en });
+  }
+  return { keys, note };
+}
+
+/** Fallback form derived from PROTOCOL_CONFIG_HELP (kept in sync by validate.test). */
+function genericFields(protocol: string): ConfigField[] {
+  const help = PROTOCOL_CONFIG_HELP[protocol] ?? "";
+  const { keys } = parseConfigHelp(help);
   const fields: ConfigField[] = [];
-  // Networked host/port style adapters get host/port; url-style get url.
-  fields.push(URL_FIELD("URL / endpoint", ""));
-  fields.push({ key: "host", type: "string", label: "主机 host", advanced: true });
-  fields.push({ key: "port", type: "number", label: "端口 port", advanced: true });
-  fields.push({ key: "user", type: "string", label: "用户名 user", advanced: true });
-  fields.push({ key: "password", type: "string", label: "密码 password", secret: true, advanced: true });
-  fields.push({ key: "token", type: "string", label: "令牌 token", secret: true, advanced: true });
-  fields.push(SIMULATOR);
+  for (const k of keys) {
+    const type: ConfigFieldType = NUMBER_KEYS.has(k.key)
+      ? "number"
+      : BOOL_KEYS.has(k.key)
+        ? "boolean"
+        : ARRAY_KEYS.has(k.key)
+          ? "array"
+          : OBJECT_KEYS.has(k.key)
+            ? "object"
+            : "string";
+    fields.push({
+      key: k.key,
+      type,
+      label: FIELD_LABEL[k.key] ?? k.key,
+      secret: SECRET_KEYS.has(k.key) || undefined,
+      advanced: !PRIMARY_KEYS.has(k.key) || k.key === "simulator" || undefined,
+      enum: k.enum,
+      itemsType: type === "array" ? (k.key === "operations" ? "object" : "string") : undefined,
+    });
+  }
+  if (!fields.some((f) => f.key === "simulator") && /simulator/.test(help)) fields.push(SIMULATOR);
   fields.push(ALLOW_WRITE);
   return fields;
 }
+
+const TITLES: Record<string, string> = {
+  asyncapi: "AsyncAPI",
+  sparkplug: "Sparkplug B (MQTT)",
+  nats: "NATS / JetStream",
+  coap: "CoAP",
+  fix: "FIX",
+  bacnet: "BACnet/IP",
+  ethernetip: "EtherNet/IP (CIP)",
+  s7: "Siemens S7",
+  mtconnect: "MTConnect",
+  snmp: "SNMP v2c",
+  smtp: "SMTP",
+  ldap: "LDAP",
+  sqlserver: "SQL Server",
+  duckdb: "DuckDB",
+  mongodb: "MongoDB",
+  elasticsearch: "Elasticsearch",
+  opensearch: "OpenSearch",
+  clickhouse: "ClickHouse",
+  neo4j: "Neo4j",
+  qdrant: "Qdrant",
+  gcs: "Google Cloud Storage",
+  oss: "阿里云 OSS",
+  influx: "InfluxDB 2",
+  prometheus: "Prometheus",
+  sqs: "AWS SQS",
+  pulsar: "Apache Pulsar",
+  webdav: "WebDAV",
+  ftp: "FTP",
+  etcd: "etcd",
+  imap: "IMAP",
+  pop3: "POP3",
+  consul: "Consul",
+  azureblob: "Azure Blob",
+  sftp: "SFTP",
+  memcached: "Memcached",
+  tftp: "TFTP",
+  caldav: "CalDAV",
+  carddav: "CardDAV",
+  beanstalkd: "Beanstalkd",
+  zookeeper: "ZooKeeper",
+  dns: "DNS",
+  cassandra: "Cassandra",
+  couchdb: "CouchDB",
+  whois: "WHOIS",
+  solr: "Solr",
+  rabbitmq: "RabbitMQ 管理 API",
+  kubernetes: "Kubernetes",
+  os_info: "本机系统信息",
+  platform_fs: "本机文件（只读）",
+  platform_process: "本机进程",
+  platform_service: "本机服务",
+  docker: "Docker Engine",
+  podman: "Podman",
+  journal: "系统日志",
+  smb: "SMB / CIFS",
+  nfs: "NFS",
+  vault: "Vault / OpenBao",
+  aws_iam: "AWS IAM",
+  alertmanager: "Alertmanager",
+  pubsub: "GCP Pub/Sub",
+  jira: "Jira",
+  browser: "浏览器",
+  partner: "Partner 应用",
+  feishu: "飞书 / Lark",
+  dingtalk: "钉钉",
+  wecom: "企业微信",
+  slack: "Slack",
+  notion: "Notion",
+  github: "GitHub",
+};
 
 const NON_NETWORKED = new Set([
   "sqlite",
@@ -468,12 +618,9 @@ export function configSchemaFor(protocol: string): ConfigSchema {
     const requiredAny = GENERIC_REQUIRED[canon];
     const fields = genericFields(canon);
     for (const group of requiredAny ?? []) {
-      const k = group[0]!;
-      if (!fields.some((f) => f.key === k)) {
-        fields.unshift({ key: k, type: k === "servers" || k === "operations" ? "array" : "string", label: k });
-      } else {
-        const f = fields.find((x) => x.key === k)!;
-        f.advanced = false;
+      if (!group.some((k) => fields.some((f) => f.key === k))) {
+        const k = group[0]!;
+        fields.unshift({ key: k, type: ARRAY_KEYS.has(k) ? "array" : "string", label: FIELD_LABEL[k] ?? k });
       }
     }
     schema = {
@@ -511,6 +658,7 @@ function markRequired(schema: ConfigSchema): ConfigSchema {
 }
 
 function titleFor(protocol: string): string {
+  if (TITLES[protocol]) return TITLES[protocol]!;
   return protocol
     .split(/[_-]/)
     .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
@@ -518,7 +666,11 @@ function titleFor(protocol: string): string {
 }
 
 function helpSummary(protocol: string): string {
-  return `${protocol} 适配器（通用表单；参见 mcp_add / PROTOCOLS.md 的具体键）。`;
+  const help = PROTOCOL_CONFIG_HELP[protocol];
+  if (!help) return `${protocol} 适配器`;
+  const { note, keys } = parseConfigHelp(help);
+  if (note) return note;
+  return `配置键：${keys.map((k) => k.key).join(", ") || "无"}`;
 }
 
 /** All schemas, one per canonical protocol id (deduped across aliases). */

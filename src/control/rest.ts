@@ -4,7 +4,7 @@ import { AdapterError, ERROR_CODE_HELP, ERROR_CODES, errorPayload } from "../run
 import { invokeAudit, invokeAuditEvents, recordSecurityEvent } from "../runtime/metrics.js";
 import { APP_NAME, APP_VERSION, type JsonObject, type McpToolSchema } from "../runtime/types.js";
 import { knownProtocols } from "../runtime/bootstrap.js";
-import { redactSecrets } from "./redact.js";
+import { redactSecrets, SECRET_MASK } from "./redact.js";
 import { MANAGEMENT_TOOL_NAMES, callManagementTool, managementToolSchemas, type ManagementContext } from "./tools.js";
 import { layerOf } from "./layers.js";
 import { allConfigSchemas, configSchemaFor, checkRequiredBySchema, missingRequiredFields } from "../catalog/config-schema.js";
@@ -160,18 +160,23 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "POST" && path === "/api/adapters") {
     const added = await callManagementTool("mcp_add", body, ctx);
+    consoleEvent(ctx, "capability.add", { adapterId: (added as { id?: string }).id, protocol: body.protocol });
     return { status: 201, body: { ...(added as object) } };
   }
 
   const put = match(method, "PUT", "/api/adapters/:id", path);
   if (put?.id) {
-    const updated = await callManagementTool("mcp_update", { id: put.id, config: body.config ?? body }, ctx);
+    const incoming = asObject(body.config ?? body);
+    const existing = ctx.registry.getRecord(put.id)?.config ?? {};
+    const updated = await callManagementTool("mcp_update", { id: put.id, config: unmaskConfig(existing, incoming) }, ctx);
+    consoleEvent(ctx, "capability.update", { adapterId: put.id });
     return { status: 200, body: updated };
   }
 
   const del = match(method, "DELETE", "/api/adapters/:id", path);
   if (del?.id) {
     const removed = await callManagementTool("mcp_remove", { id: del.id }, ctx);
+    consoleEvent(ctx, "capability.remove", { adapterId: del.id });
     return { status: 200, body: removed };
   }
 
@@ -326,6 +331,8 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
 
   if (method === "POST" && path === "/api/blacklist") {
     const added = await callManagementTool("mcp_blacklist_add", body, ctx);
+    const entry = (added as { entry?: { id?: string; kind?: string } }).entry;
+    consoleEvent(ctx, "blacklist.add", { detail: entry?.id ?? "", blacklistKind: entry?.kind });
     return { status: 201, body: added };
   }
 
@@ -340,6 +347,7 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   const blDel = match(method, "DELETE", "/api/blacklist/:id", path);
   if (blDel?.id) {
     const removed = await callManagementTool("mcp_blacklist_remove", { id: blDel.id }, ctx);
+    consoleEvent(ctx, "blacklist.remove", { detail: blDel.id });
     return { status: 200, body: removed };
   }
 
@@ -451,6 +459,11 @@ async function dispatch(ctx: ManagementContext, req: RestRequest): Promise<RestR
   });
 }
 
+/** Console-initiated changes show up in 活动 (secrets never included: ids only). */
+function consoleEvent(ctx: ManagementContext, tool: string, extra: Record<string, unknown>): void {
+  recordSecurityEvent({ ok: true, kind: "policy", tool, actor: "console", ...extra, dataDir: ctx.config.dataDir });
+}
+
 /** 当前能力 row toggle: off keeps the registration but unmounts it (no Agent tools). */
 async function setAdapterEnabled(ctx: ManagementContext, id: string, enabled: boolean): Promise<Record<string, unknown>> {
   const rec = ctx.registry.getRecord(id);
@@ -476,6 +489,28 @@ async function setAdapterEnabled(ctx: ManagementContext, id: string, enabled: bo
   return { ok: true, id, enabled, adapter: decorateAdapter(ctx, id, snap, blocked) };
 }
 
+/**
+ * The console edits redacted configs. A value still equal to the mask means
+ * "unchanged": restore the stored secret instead of persisting "••••".
+ * Nested objects (auth: {...}) are merged the same way.
+ */
+export function unmaskConfig(existing: JsonObject, incoming: JsonObject): JsonObject {
+  const out: JsonObject = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === SECRET_MASK) {
+      if (existing[k] !== undefined) out[k] = existing[k]!;
+      continue;
+    }
+    const prev = existing[k];
+    if (v && typeof v === "object" && !Array.isArray(v) && prev && typeof prev === "object" && !Array.isArray(prev)) {
+      out[k] = unmaskConfig(prev as JsonObject, v as JsonObject);
+      continue;
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
 function requireAuto(ctx: ManagementContext) {
   if (!ctx.discovery) {
     throw new AdapterError("E_UNSUPPORTED", "Auto-discovery engine is not running in this process");
@@ -489,7 +524,10 @@ async function activityPayload(ctx: ManagementContext, rawLimit: number): Promis
   const audit = ctx.auditLog?.snapshot(limit).events ?? invokeAuditEvents(limit);
   const runs = ctx.discovery ? (await ctx.discovery.load(), ctx.discovery.listRuns(20)) : [];
   const items: Array<Record<string, unknown>> = [
-    ...audit.map((e) => ({ type: e.kind === "discovery" ? "discovery" : e.kind ?? "invoke", ...e })),
+    // discovery.<trigger> audit lines duplicate the run records below; keep settings changes.
+    ...audit
+      .filter((e) => !(e.kind === "discovery" && runs.length && /^discovery\.(auto|manual|startup)$/.test(e.tool ?? "")))
+      .map((e) => ({ type: e.kind === "discovery" ? "discovery" : e.kind ?? "invoke", ...e })),
     ...runs.map((r) => ({
       type: "discovery_run",
       at: r.finishedAt ?? r.startedAt,
@@ -520,17 +558,20 @@ async function overviewPayload(ctx: ManagementContext): Promise<Record<string, u
   let blockedCaps = 0;
   let enabled = 0;
   let failing = 0;
+  let disabled = 0;
   for (const a of snap.adapters) {
     const d = decorateAdapter(ctx, a.id, a, blocked);
+    const off = (a.status as string) === "disabled" || d.disabled === true;
     if (d.blacklisted) blockedCaps += 1;
-    else if (a.status === "live" && d.disabled !== true) enabled += 1;
-    if (a.status !== "live") failing += 1;
+    else if (a.status === "live" && !off) enabled += 1;
+    if (off) disabled += 1;
+    else if (a.status !== "live") failing += 1;
   }
   const disc = ctx.discovery ? (await ctx.discovery.listCandidates(), ctx.discovery.counts()) : { discovered: 0, ready: 0, needsConfig: 0 };
   const schemas = allConfigSchemas();
   return {
     ok: true,
-    current: { total: snap.adapters.length, enabled, blacklisted: blockedCaps, failing, tools: snap.tools.length },
+    current: { total: snap.adapters.length, enabled, disabled, blacklisted: blockedCaps, failing, tools: snap.tools.length },
     supported: { discovered: disc.discovered ?? 0, ready: disc.ready ?? 0, needsConfig: disc.needsConfig ?? 0, types: schemas.length },
     blacklist: {
       total: entries.length,

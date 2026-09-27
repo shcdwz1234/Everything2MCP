@@ -129,3 +129,38 @@ describe("S1 REST /api/protocols + validate + test connection", { timeout: 30_00
     }
   });
 });
+
+describe("S2 support: masked secrets are not persisted on PUT", { timeout: 30_000 }, () => {
+  it("PUT with •••• keeps the stored secret; nested auth merges", async () => {
+    const { unmaskConfig } = await import("../src/control/rest.js");
+    const { SECRET_MASK } = await import("../src/control/redact.js");
+    const merged = unmaskConfig(
+      { secretKey: "real", auth: { type: "bearer", token: "t0" }, bucket: "a" },
+      { secretKey: SECRET_MASK, auth: { type: "bearer", token: SECRET_MASK }, bucket: "b" },
+    );
+    assert.deepEqual(merged, { secretKey: "real", auth: { type: "bearer", token: "t0" }, bucket: "b" });
+
+    const dataDir = await mkdtemp(join(tmpdir(), "e2m-s2-"));
+    const app = await startHttp({ dataDir, transport: { kind: "http", port: 0, host: "127.0.0.1" } });
+    try {
+      const base = app.http.url;
+      await fetch(`${base}/api/adapters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ protocol: "s3", name: "v", config: { bucket: "b", endpoint: "memory://", secretKey: "keepme" } }),
+      });
+      const put = await fetch(`${base}/api/adapters/${encodeURIComponent("s3:v")}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: { bucket: "c", secretKey: SECRET_MASK } }),
+      });
+      assert.equal(put.status, 200);
+      const rec = app.registry.getRecord("s3:v")!;
+      assert.equal(rec.config.secretKey, "keepme");
+      assert.equal(rec.config.bucket, "c");
+    } finally {
+      await app.close();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});

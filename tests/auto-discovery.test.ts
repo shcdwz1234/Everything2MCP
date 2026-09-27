@@ -274,6 +274,8 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       const ov2 = await j("/api/overview");
       assert.equal(ov2.body.current.enabled, 0);
       assert.equal(ov2.body.current.total, 1);
+      assert.equal(ov2.body.current.disabled, 1);
+      assert.equal(ov2.body.current.failing, 0);
       const on = await put(`/api/adapters/${encodeURIComponent("sqlite:mem")}/enabled`, { enabled: true }, "POST");
       assert.equal(on.body.adapter.status, "live");
 
@@ -281,6 +283,10 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       assert.equal(act.status, 200);
       assert.ok(act.body.items.some((i: { type: string }) => i.type === "discovery_run"));
       assert.ok(act.body.items.some((i: { tool?: string }) => i.tool === "capability.disable"));
+      // console-initiated changes are audited (ids only), and the startup/manual run is not listed twice
+      assert.ok(act.body.items.some((i: { tool?: string }) => i.tool === "capability.add"));
+      assert.ok(act.body.items.some((i: { tool?: string; detail?: string }) => i.tool === "blacklist.add" && i.detail === "tool|sqlite.*.execute"));
+      assert.equal(act.body.items.filter((i: { tool?: string }) => i.tool === "discovery.manual").length, 1);
     } finally {
       await app.close();
       await rm(t.dataDir, { recursive: true, force: true });

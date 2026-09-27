@@ -1,21 +1,21 @@
 import { getToken, rest, setToken } from "./api.js";
 
+type CapTab = "current" | "supported" | "blacklist";
+
 type Page =
-  | { name: "dashboard" }
-  | { name: "adapters" }
-  | { name: "adapter-new" }
-  | { name: "adapter"; id: string }
+  | { name: "caps"; tab: CapTab }
+  | { name: "add"; type?: string; source?: string; edit?: string }
+  | { name: "activity" }
+  | { name: "settings" }
   | { name: "tools"; layer: string }
   | { name: "tool"; tool: string }
-  | { name: "settings" }
   | { name: "discovery" }
   | { name: "import" }
   | { name: "matrix" }
   | { name: "audit" }
   | { name: "plan" }
-  | { name: "blacklist" }
   | { name: "security" }
-  | { name: "capabilities" }
+  | { name: "hotload" }
   | { name: "partner" };
 
 const root = document.getElementById("app")!;
@@ -31,9 +31,22 @@ function parseHash(): Page {
   const [path, qs] = raw.split("?");
   const parts = (path ?? "/").split("/").filter(Boolean);
   const query = new URLSearchParams(qs ?? "");
-  if (parts[0] === "adapters" && parts[1] === "new") return { name: "adapter-new" };
-  if (parts[0] === "adapters" && parts[1]) return { name: "adapter", id: decodeURIComponent(parts[1]) };
-  if (parts[0] === "adapters") return { name: "adapters" };
+  const tabOf = (v: string | null): CapTab => (v === "supported" || v === "blacklist" ? v : "current");
+  // New IA: 能力 / 活动 / 设置. Old hashes redirect into the new locations.
+  if (parts.length === 0 || parts[0] === "caps") return { name: "caps", tab: tabOf(query.get("tab")) };
+  if (parts[0] === "adapters" && parts[1] === "new") return { name: "add", type: query.get("type") ?? undefined };
+  if (parts[0] === "adapters" && parts[1]) return { name: "add", edit: decodeURIComponent(parts[1]) };
+  if (parts[0] === "adapters" || parts[0] === "capabilities") return { name: "caps", tab: "current" };
+  if (parts[0] === "blacklist") return { name: "caps", tab: "blacklist" };
+  if (parts[0] === "add") {
+    return {
+      name: "add",
+      type: query.get("type") ?? undefined,
+      source: query.get("source") ?? undefined,
+      edit: query.get("edit") ?? undefined,
+    };
+  }
+  if (parts[0] === "activity") return { name: "activity" };
   if (parts[0] === "tools" && parts[1]) return { name: "tool", tool: decodeURIComponent(parts[1]) };
   if (parts[0] === "tools") return { name: "tools", layer: query.get("layer") || "business" };
   if (parts[0] === "settings") return { name: "settings" };
@@ -42,11 +55,10 @@ function parseHash(): Page {
   if (parts[0] === "matrix") return { name: "matrix" };
   if (parts[0] === "audit") return { name: "audit" };
   if (parts[0] === "plan") return { name: "plan" };
-  if (parts[0] === "blacklist") return { name: "blacklist" };
   if (parts[0] === "security") return { name: "security" };
-  if (parts[0] === "capabilities") return { name: "capabilities" };
+  if (parts[0] === "hotload") return { name: "hotload" };
   if (parts[0] === "partner") return { name: "partner" };
-  return { name: "dashboard" };
+  return { name: "caps", tab: "current" };
 }
 
 function href(page: string): string {
@@ -84,12 +96,14 @@ function statusDot(ok: boolean | undefined, failed?: boolean): string {
   return `<span class="dot ${cls}"></span>`;
 }
 
+const ADVANCED_PAGES = new Set(["tools", "tool", "discovery", "import", "matrix", "audit", "plan", "security", "hotload", "partner"]);
+
 function navLink(page: Page, hrefPath: string, label: string, extra = ""): string {
+  const target = hrefPath.replace(/^\//, "").split("?")[0] || "caps";
   const current =
-    (page.name === "dashboard" && hrefPath === "/") ||
-    (page.name.startsWith("adapter") && hrefPath === "/adapters") ||
-    ((page.name === "tools" || page.name === "tool") && hrefPath === "/tools") ||
-    (page.name === hrefPath.slice(1) && hrefPath !== "/");
+    (target === "caps" && (page.name === "caps" || page.name === "add")) ||
+    (target === "tools" && (page.name === "tools" || page.name === "tool")) ||
+    page.name === target;
   return `<a href="${href(hrefPath)}" class="${current ? "active" : ""}">${label}${extra}</a>`;
 }
 
@@ -108,24 +122,26 @@ function layout(page: Page, body: string): string {
         </div>
       </div>
       <nav class="nav">
-        ${navLink(page, "/", "仪表盘")}
-        ${navLink(page, "/adapters", "适配器")}
-        ${navLink(page, "/tools", "工具")}
-        ${navLink(page, "/plan", "计划桥")}
-        ${navLink(page, "/discovery", "发现")}
-        ${navLink(page, "/capabilities", "热加载")}
-        ${navLink(page, "/partner", "伙伴")}
-        ${navLink(page, "/import", "导入")}
-        ${navLink(page, "/audit", "审计")}
-        ${navLink(page, "/blacklist", "黑名单")}
-        ${navLink(page, "/security", "安全")}
-        ${navLink(page, "/matrix", "协议矩阵")}
+        ${navLink(page, "/caps", "能力")}
+        ${navLink(page, "/activity", "活动")}
         ${navLink(page, "/settings", "设置")}
+        <details class="nav-adv" ${ADVANCED_PAGES.has(page.name) ? "open" : ""}>
+          <summary>高级</summary>
+          ${navLink(page, "/tools", "工具分层")}
+          ${navLink(page, "/discovery", "单主机扫描")}
+          ${navLink(page, "/import", "导入 Schema")}
+          ${navLink(page, "/hotload", "环境盘点")}
+          ${navLink(page, "/partner", "Partner")}
+          ${navLink(page, "/plan", "计划桥")}
+          ${navLink(page, "/security", "安全模块")}
+          ${navLink(page, "/audit", "原始审计")}
+          ${navLink(page, "/matrix", "协议矩阵")}
+        </details>
       </nav>
       <div class="side-foot">
         默认 <code>allowWrite=false</code><br/>
-        禁止 CIDR / 网段扫描<br/>
-        不破坏 stdio / HTTP / SSE
+        自动发现只扫私网，元数据地址永不扫描<br/>
+        黑名单在 Full 模式下仍生效
       </div>
     </aside>
     <section class="main">
@@ -133,7 +149,7 @@ function layout(page: Page, body: string): string {
         <button class="nav-toggle" id="nav-toggle" type="button" aria-label="菜单">☰</button>
         <div class="capsules">
           <span class="capsule">${statusDot(true)} ${esc(transport)} 监听</span>
-          <span class="capsule">${statusDot(adapters >= 0)} 适配器 ${adapters}</span>
+          <span class="capsule">${statusDot(adapters >= 0)} 能力 ${adapters}</span>
           <span class="capsule">${statusDot(true)} 业务 tools ${tools}</span>
           <span class="capsule">${statusDot(false, true)} WRITE-OFF</span>
           <span class="capsule">${statusDot(tokenOn, !tokenOn && Boolean((health as { transport?: unknown })?.transport))} AUTH ${tokenOn ? "token" : "open"}</span>
@@ -209,20 +225,18 @@ function bindGlobal(): void {
 
 async function renderPage(page: Page): Promise<string> {
   switch (page.name) {
-    case "dashboard":
-      return renderDashboard();
-    case "adapters":
-      return renderAdapters();
-    case "adapter-new":
-      return renderAdapterForm();
-    case "adapter":
-      return renderAdapterDetail(page.id);
+    case "caps":
+      return renderCaps(page.tab);
+    case "add":
+      return renderAdd(page);
+    case "activity":
+      return renderActivity();
+    case "settings":
+      return renderSettingsPage();
     case "tools":
       return renderTools(page.layer);
     case "tool":
       return renderTool(page.tool);
-    case "settings":
-      return renderSettings();
     case "discovery":
       return renderDiscovery();
     case "import":
@@ -233,138 +247,13 @@ async function renderPage(page: Page): Promise<string> {
       return renderAudit();
     case "plan":
       return renderPlan();
-    case "blacklist":
-      return renderBlacklist();
     case "security":
       return renderSecurity();
-    case "capabilities":
+    case "hotload":
       return renderCapabilities();
     case "partner":
       return renderPartner();
   }
-}
-
-async function renderDashboard(): Promise<string> {
-  const h = health ?? {};
-  const adapters = Array.isArray(h.adapters) ? (h.adapters as Array<Record<string, unknown>>) : [];
-  const hints = Array.isArray(h.hints) ? (h.hints as string[]) : [];
-  const layers = (h.toolLayers as { management?: number; business?: number } | undefined) ?? {};
-  const audit = (h.invokeAudit as { success?: number; fail?: number } | undefined) ?? {};
-  const rows = adapters
-    .map(
-      (a) => `<tr>
-        <td>${statusDot(a.status === "live" && (a.health as { ok?: boolean } | undefined)?.ok !== false, a.status !== "live")}</td>
-        <td><a href="${href(`/adapters/${encodeURIComponent(String(a.id))}`)}">${esc(a.id)}</a></td>
-        <td>${protoBadge(String(a.protocol))}</td>
-        <td>${esc(a.toolCount ?? 0)}</td>
-        <td>${esc((a.health as { detail?: string } | undefined)?.detail ?? a.error ?? a.status)}</td>
-      </tr>`,
-    )
-    .join("");
-  return `
-    <div class="page-head">
-      <div>
-        <h2>仪表盘</h2>
-        <p>同进程控制台 · REST <code>/api</code> 复用 control/catalog · 数据面默认只读</p>
-      </div>
-      <div class="row-actions">
-        <a class="btn primary" href="${href("/adapters/new")}">注册适配器</a>
-        <a class="btn" href="${href("/plan")}">计划桥</a>
-        <a class="btn" href="${href("/audit")}">审计</a>
-      </div>
-    </div>
-    <div class="grid">
-      <div class="card"><h3>适配器</h3><div class="metric">${esc(h.adapterCount ?? 0)}</div></div>
-      <div class="card"><h3>业务 tools</h3><div class="metric">${esc(layers.business ?? h.toolCount ?? 0)}</div></div>
-      <div class="card"><h3>管理 tools</h3><div class="metric">${esc(layers.management ?? "—")}</div></div>
-      <div class="card"><h3>invoke 审计</h3><div class="metric">${esc(audit.success ?? 0)}/${esc(audit.fail ?? 0)}</div></div>
-    </div>
-    ${hints.length ? `<div class="warn-box">${hints.map((x) => esc(x)).join("<br/>")}</div>` : ""}
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th></th><th>ID</th><th>协议</th><th>Tools</th><th>健康</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="empty">还没有适配器。<a href="${href("/plan")}">计划桥</a> 或 <a href="${href("/adapters/new")}">手动注册</a>。</td></tr>`}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-async function renderAdapters(): Promise<string> {
-  const data = await rest.adapters();
-  const adapters = (data.adapters as Array<Record<string, unknown>>) ?? [];
-  const rows = adapters
-    .map(
-      (a) => `<tr>
-        <td>${statusDot(a.status === "live", a.status !== "live")}</td>
-        <td><a href="${href(`/adapters/${encodeURIComponent(String(a.id))}`)}">${esc(a.id)}</a></td>
-        <td>${protoBadge(String(a.protocol))}</td>
-        <td>${ingressBadge(a.ingress)}</td>
-        <td>${esc(a.name)}</td>
-        <td>${a.allowWrite === true ? "on" : "off"}</td>
-        <td>${esc(a.toolCount ?? 0)}</td>
-        <td>${a.blacklisted === true ? `<span class="proto blocked-tag">已拉黑</span>` : "—"}</td>
-      </tr>`,
-    )
-    .join("");
-  return `
-    <div class="page-head">
-      <div>
-        <h2>适配器</h2>
-        <p>热注册 CRUD。密钥在 REST 响应里已脱敏。命中黑名单的实例仍挂着，但 invoke 会被拒绝。</p>
-      </div>
-      <a class="btn primary" href="${href("/adapters/new")}">新建</a>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th></th><th>ID</th><th>协议</th><th>ingress</th><th>名称</th><th>allowWrite</th><th>Tools</th><th>黑名单</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="8" class="empty">空注册表。<a href="${href("/adapters/new")}">新建适配器</a> 或从 <a href="${href("/discovery")}">发现</a> 导入。</td></tr>`}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-async function renderAdapterForm(existing?: Record<string, unknown>): Promise<string> {
-  const settings = await rest.settings();
-  const protocols = (settings.protocols as string[]) ?? [];
-  const help = (settings.protocolHelp as Record<string, string>) ?? {};
-  const proto = String(existing?.protocol ?? "sqlite");
-  const name = String(existing?.name ?? "");
-  const config = existing?.config && typeof existing.config === "object" ? existing.config : { filename: ":memory:", allowWrite: false };
-  const options = protocols.map((p) => `<option value="${esc(p)}" ${p === proto ? "selected" : ""}>${esc(p)}</option>`).join("");
-  return `
-    <div class="page-head">
-      <div>
-        <h2>${existing ? `适配器 ${esc(existing.id)}` : "新建适配器"}</h2>
-        <p>写入默认关闭。不要把 allowWrite 设成默认开。</p>
-      </div>
-    </div>
-    <form class="card" id="adapter-form" data-id="${esc(existing?.id ?? "")}">
-      <div class="field">
-        <label>协议</label>
-        <select name="protocol" ${existing ? "disabled" : ""}>${options}</select>
-        <div class="hint" id="proto-help">${esc(help[proto] ?? "")}</div>
-      </div>
-      <div class="field">
-        <label>名称</label>
-        <input name="name" value="${esc(name)}" ${existing ? "disabled" : ""} required pattern="[A-Za-z0-9_-]{1,64}" />
-      </div>
-      <div class="field">
-        <label>config JSON</label>
-        <textarea name="config">${esc(pretty(config))}</textarea>
-      </div>
-      <div class="warn-box">allowWrite 必须显式 <code>true</code> 才会放开写路径。控制台不会替你打开。</div>
-      <div class="row-actions" style="margin-top:14px">
-        <button class="btn primary" type="submit">${existing ? "保存配置" : "注册"}</button>
-        ${existing ? `<button class="btn" type="button" id="ping-btn">Ping</button><button class="btn danger" type="button" id="del-btn">删除</button>` : ""}
-      </div>
-    </form>
-    <pre id="adapter-result" hidden></pre>
-  `;
-}
-
-async function renderAdapterDetail(id: string): Promise<string> {
-  const data = await rest.adapter(id);
-  return renderAdapterForm(data.adapter as Record<string, unknown>);
 }
 
 async function renderTools(layer: string): Promise<string> {
@@ -392,7 +281,7 @@ async function renderTools(layer: string): Promise<string> {
     <div class="table-wrap">
       <table>
         <thead><tr><th>层</th><th>名称</th><th>协议</th><th>说明</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4" class="empty">这一层没有 tools。先 <a href="${href("/adapters/new")}">注册适配器</a>。</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="4" class="empty">这一层没有 tools。先 <a href="${href("/add")}">注册适配器</a>。</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -428,36 +317,6 @@ async function renderTool(name: string): Promise<string> {
           </form>
           <pre id="invoke-result" hidden></pre>`
     }
-  `;
-}
-
-async function renderSettings(): Promise<string> {
-  const s = await rest.settings();
-  return `
-    <div class="page-head">
-      <div>
-        <h2>设置（只读）</h2>
-        <p>进程配置展示。Token 本身不会回显，只显示是否已配置。</p>
-      </div>
-    </div>
-    <div class="grid">
-      <div class="card"><h3>应用</h3><div>${esc(s.app)} ${esc(s.version)}</div></div>
-      <div class="card"><h3>dataDir</h3><div class="metric" style="font-size:16px">${esc(s.dataDir)}</div></div>
-      <div class="card"><h3>allowWrite 默认</h3><div class="metric">false</div></div>
-      <div class="card"><h3>CIDR 扫描</h3><div class="metric">off</div></div>
-    </div>
-    <div class="card">
-      <h3>TLS</h3>
-      <p class="hint">gRPC <code>tlsWatch: true</code> 换 PEM 后进程内 remount ChannelCredentials，不必 mcp_update（打开的 bidi 会断）。其它适配器仍用保存配置重连。</p>
-    </div>
-    <div class="card">
-      <h3>黑名单</h3>
-      <p class="hint">匹配键是 canonical protocol + 规范化 host + port（或规范化 url）。阻止新建与发现一键添加；已挂载实例 invoke 也会被拒绝。</p>
-      <div class="row-actions" style="margin-top:12px">
-        <a class="btn" href="${href("/blacklist")}">打开黑名单</a>
-      </div>
-    </div>
-    <pre>${esc(pretty(s))}</pre>
   `;
 }
 
@@ -721,64 +580,6 @@ async function renderPlan(): Promise<string> {
   `;
 }
 
-async function renderBlacklist(): Promise<string> {
-  const data = await rest.blacklist();
-  const entries = (data.entries as Array<Record<string, unknown>>) ?? [];
-  const rows = entries
-    .map(
-      (e) => `<tr>
-        <td><code>${esc(e.id)}</code></td>
-        <td>${protoBadge(String(e.protocol))}</td>
-        <td>${esc(e.host)}</td>
-        <td>${esc(e.port)}</td>
-        <td>${esc(e.reason ?? "—")}</td>
-        <td>${esc(e.createdAt ?? "")}</td>
-        <td><button class="btn danger" type="button" data-bl-id="${esc(e.id)}">解除拉黑</button></td>
-      </tr>`,
-    )
-    .join("");
-  return `
-    <div class="page-head">
-      <div>
-        <h2>黑名单</h2>
-        <p>匹配 <code>protocol + 规范化 host + port</code>（无 host 时退回规范化 url）。持久化在 dataDir 的 <code>blacklist.json</code>，与 registrations 同级。不扫描网段。</p>
-      </div>
-      <a class="btn" href="${href("/discovery")}">去发现</a>
-    </div>
-    <form class="card" id="blacklist-form">
-      <div class="field">
-        <label>协议</label>
-        <input name="protocol" required placeholder="mqtt / openapi / redis" />
-      </div>
-      <div class="field">
-        <label>host</label>
-        <input name="host" placeholder="10.0.0.8 或 broker.internal" />
-      </div>
-      <div class="field">
-        <label>port</label>
-        <input name="port" type="number" min="1" max="65535" />
-      </div>
-      <div class="field">
-        <label>url（可选；没有 host+port 时用）</label>
-        <input name="url" placeholder="mqtt://10.0.0.8:1883" />
-      </div>
-      <div class="field">
-        <label>原因（可选）</label>
-        <input name="reason" placeholder="生产禁扫 / 误探到的邻居" />
-      </div>
-      <div class="row-actions">
-        <button class="btn primary" type="submit">加入黑名单</button>
-      </div>
-    </form>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>ID</th><th>协议</th><th>Host</th><th>Port</th><th>原因</th><th>时间</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="7" class="empty">还没有拉黑目标。从 <a href="${href("/discovery")}">发现</a> 结果行加入，或用上面的表单。</td></tr>`}</tbody>
-      </table>
-    </div>
-  `;
-}
-
 async function renderSecurity(): Promise<string> {
   const data = await rest.security();
   const mode = String(data.mode ?? "safe");
@@ -832,7 +633,7 @@ async function renderSecurity(): Promise<string> {
       <h3>黑名单</h3>
       <p class="hint">Agent 看不到已拉黑目标的 tools。控制台可管理。</p>
       <div class="row-actions" style="margin-top:12px">
-        <a class="btn" href="${href("/blacklist")}">打开黑名单</a>
+        <a class="btn" href="${href("/caps?tab=blacklist")}">打开黑名单</a>
       </div>
     </div>
   `;
@@ -865,6 +666,9 @@ function blacklistPayloadFromRecord(record: Record<string, unknown>): Record<str
 }
 
 function bindPage(page: Page): void {
+  if (page.name === "caps") bindCaps(page.tab);
+  if (page.name === "add") bindAdd();
+  if (page.name === "settings") bindSettingsPage();
   if (page.name === "tools") {
     document.getElementById("layer-tabs")?.addEventListener("click", (ev) => {
       const btn = (ev.target as HTMLElement).closest("button[data-layer]");
@@ -1028,81 +832,6 @@ function bindPage(page: Page): void {
     });
   }
 
-  const adapterForm = document.getElementById("adapter-form") as HTMLFormElement | null;
-  if (adapterForm) {
-    const help = adapterForm.querySelector("#proto-help");
-    adapterForm.querySelector("select[name=protocol]")?.addEventListener("change", async (ev) => {
-      const proto = (ev.target as HTMLSelectElement).value;
-      try {
-        const settings = await rest.settings();
-        const map = (settings.protocolHelp as Record<string, string>) ?? {};
-        if (help) help.textContent = map[proto] ?? "";
-      } catch {
-        /* ignore */
-      }
-    });
-    adapterForm.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(adapterForm);
-      let config: unknown;
-      try {
-        config = JSON.parse(String(fd.get("config") || "{}"));
-      } catch (err) {
-        showToast("err", `config JSON 无效: ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-      try {
-        const id = adapterForm.dataset.id;
-        if (id) {
-          await rest.updateAdapter(id, config);
-          showToast("ok", `已更新 ${id}`);
-          location.hash = `/adapters/${encodeURIComponent(id)}`;
-        } else {
-          const created = await rest.createAdapter({
-            protocol: String(fd.get("protocol")),
-            name: String(fd.get("name")),
-            config,
-          });
-          showToast("ok", `已注册 ${String((created as { id?: string }).id)}`);
-          location.hash = `/adapters/${encodeURIComponent(String((created as { id?: string }).id))}`;
-        }
-        void render();
-      } catch (err) {
-        showToast("err", err instanceof Error ? err.message : String(err));
-      }
-    });
-    document.getElementById("ping-btn")?.addEventListener("click", async () => {
-      const id = adapterForm.dataset.id;
-      if (!id) return;
-      const out = document.getElementById("adapter-result");
-      try {
-        const r = await rest.ping(id);
-        if (out) {
-          out.hidden = false;
-          out.textContent = pretty(r);
-        }
-      } catch (err) {
-        if (out) {
-          out.hidden = false;
-          out.textContent = err instanceof Error ? err.message : String(err);
-        }
-      }
-    });
-    document.getElementById("del-btn")?.addEventListener("click", async () => {
-      const id = adapterForm.dataset.id;
-      if (!id) return;
-      if (!window.confirm(`删除适配器 ${id}？此操作会断开并卸载其 tools。`)) return;
-      try {
-        await rest.deleteAdapter(id);
-        showToast("ok", `已删除 ${id}`);
-        location.hash = "/adapters";
-        void render();
-      } catch (err) {
-        showToast("err", err instanceof Error ? err.message : String(err));
-      }
-    });
-  }
-
   const invokeForm = document.getElementById("invoke-form") as HTMLFormElement | null;
   if (invokeForm) {
     invokeForm.addEventListener("submit", async (ev) => {
@@ -1180,7 +909,7 @@ function bindPage(page: Page): void {
         if (box) {
           box.innerHTML = `
             ${cards || `<div class="empty">没有可注册建议。${hidden ? `已过滤 ${hidden} 条黑名单候选。` : "原始候选见下方。"}</div>`}
-            ${blockedCards ? `<div class="page-head"><div><h2>已拉黑</h2><p>这些候选被标记且不可一键注册。去 <a href="${href("/blacklist")}">黑名单</a> 解除。</p></div></div>${blockedCards}` : ""}
+            ${blockedCards ? `<div class="page-head"><div><h2>已拉黑</h2><p>这些候选被标记且不可一键注册。去 <a href="${href("/caps?tab=blacklist")}">黑名单</a> 解除。</p></div></div>${blockedCards}` : ""}
             <pre>${esc(pretty(scanned))}</pre>`;
           box.querySelectorAll("button[data-sug]").forEach((btn) => {
             btn.addEventListener("click", async () => {
@@ -1191,7 +920,7 @@ function bindPage(page: Page): void {
               try {
                 const r = await rest.registerSuggestion({ suggestion });
                 showToast("ok", `已注册 ${String((r as { id?: string }).id)}`);
-                location.hash = `/adapters/${encodeURIComponent(String((r as { id?: string }).id))}`;
+                location.hash = "/caps";
                 void render();
               } catch (err) {
                 showToast("err", err instanceof Error ? err.message : String(err));
@@ -1298,9 +1027,9 @@ function bindPage(page: Page): void {
                 : tool === "schema_import"
                   ? href("/import")
                   : tool === "mcp_add" || tool === "mcp_add_from_discovery"
-                    ? href("/adapters/new")
+                    ? href("/add")
                     : tool === "mcp_health"
-                      ? href("/")
+                      ? href("/caps")
                       : href("/tools");
             return `<div class="tl-row">
               ${statusDot(true)}
@@ -1326,49 +1055,6 @@ function bindPage(page: Page): void {
     });
   }
 
-  const blacklistForm = document.getElementById("blacklist-form") as HTMLFormElement | null;
-  if (blacklistForm) {
-    blacklistForm.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(blacklistForm);
-      const protocol = String(fd.get("protocol") || "").trim();
-      const host = String(fd.get("host") || "").trim();
-      const url = String(fd.get("url") || "").trim();
-      const reason = String(fd.get("reason") || "").trim();
-      const portRaw = String(fd.get("port") || "").trim();
-      if (host && (/[\/,]|\*/.test(host) || host.includes("/"))) {
-        showToast("err", "host 只接受单个地址，不接受 CIDR。");
-        return;
-      }
-      const body: Record<string, unknown> = { protocol };
-      if (host) body.host = host;
-      if (portRaw) body.port = Number(portRaw);
-      if (url) body.url = url;
-      if (reason) body.reason = reason;
-      try {
-        const r = await rest.addBlacklist(body);
-        showToast("ok", `已拉黑 ${String((r as { entry?: { id?: string } }).entry?.id ?? protocol)}`);
-        void render();
-      } catch (err) {
-        showToast("err", err instanceof Error ? err.message : String(err));
-      }
-    });
-    document.querySelectorAll("button[data-bl-id]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = (btn as HTMLElement).dataset.blId;
-        if (!id) return;
-        if (!window.confirm(`解除拉黑 ${id}？之后发现与 mcp_add 可以再次添加该目标。`)) return;
-        try {
-          await rest.removeBlacklist(id);
-          showToast("ok", `已解除 ${id}`);
-          void render();
-        } catch (err) {
-          showToast("err", err instanceof Error ? err.message : String(err));
-        }
-      });
-    });
-  }
-
   document.querySelectorAll("button[data-mode]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const mode = (btn as HTMLElement).dataset.mode;
@@ -1382,6 +1068,952 @@ function bindPage(page: Page): void {
         showToast("err", err instanceof Error ? err.message : String(err));
       }
     });
+  });
+}
+
+
+// ───────────────────────── S2: 能力 / 添加 / 活动 / 设置 ─────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type J = any;
+
+const PACK_LABEL: Record<string, string> = {
+  http: "HTTP / Web API",
+  rpc: "RPC",
+  messaging: "消息 / 流",
+  industrial: "工业 / IoT",
+  data: "数据 / 存储 / 基础设施",
+  collab: "协作 / SaaS",
+  platform: "本机 / 平台",
+  other: "其他",
+};
+const PACK_ORDER = ["http", "rpc", "data", "messaging", "industrial", "platform", "collab", "other"];
+
+const SOURCE_LABEL: Record<string, string> = {
+  localhost: "本机",
+  interface: "局域网",
+  manual: "手动范围",
+  mdns: "mDNS",
+  ssdp: "SSDP",
+};
+
+let protocolCache: J[] | undefined;
+async function loadProtocols(): Promise<J[]> {
+  if (!protocolCache) protocolCache = ((await rest.protocols()) as J).protocols ?? [];
+  return protocolCache!;
+}
+
+function tag(text: string, kind = ""): string {
+  return `<span class="tag ${kind}">${esc(text)}</span>`;
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function fmtTime(iso: unknown): string {
+  if (!iso) return "—";
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString("zh-CN", { hour12: false });
+}
+
+function capState(a: J): { label: string; kind: string } {
+  if (a.blacklisted) return { label: a.blacklistKind === "capability" ? "已拉黑（实例）" : "已拉黑（目标）", kind: "bad" };
+  if (a.status === "disabled") return { label: "已停用", kind: "muted" };
+  if (a.status === "restore_failed") return { label: "连接失败", kind: "bad" };
+  return { label: "运行中", kind: "ok" };
+}
+
+function strip(ov: J, tab: CapTab): string {
+  const c = ov.current ?? {};
+  const s = ov.supported ?? {};
+  const b = ov.blacklist ?? {};
+  const d = ov.discovery ?? {};
+  const modeLabel = d.mode === "auto" ? "自动" : d.mode === "manual" ? "手动" : "关闭";
+  const last = d.lastRun;
+  return `
+    <div class="strip">
+      <a class="strip-item ${tab === "current" ? "on" : ""}" href="${href("/caps?tab=current")}">
+        <span class="strip-k">当前能力</span>
+        <span class="strip-v">${esc(c.total ?? 0)}</span>
+        <span class="strip-s">启用 ${esc(c.enabled ?? 0)} · 拉黑 ${esc(c.blacklisted ?? 0)}${c.disabled ? ` · 停用 ${esc(c.disabled)}` : ""}${c.failing ? ` · 异常 ${esc(c.failing)}` : ""}</span>
+      </a>
+      <a class="strip-item ${tab === "supported" ? "on" : ""}" href="${href("/caps?tab=supported")}">
+        <span class="strip-k">可支持能力</span>
+        <span class="strip-v">${esc(s.discovered ?? 0)}<small> 已发现</small></span>
+        <span class="strip-s">可一键启用 ${esc(s.ready ?? 0)} · 需要配置 ${esc(s.needsConfig ?? 0)} · 类型 ${esc(s.types ?? 0)}</span>
+      </a>
+      <a class="strip-item ${tab === "blacklist" ? "on" : ""}" href="${href("/caps?tab=blacklist")}">
+        <span class="strip-k">黑名单</span>
+        <span class="strip-v">${esc(b.total ?? 0)}</span>
+        <span class="strip-s">目标 ${esc(b.target ?? 0)} · 能力 ${esc(b.capability ?? 0)} · 工具 ${esc(b.tool ?? 0)}</span>
+      </a>
+      <div class="strip-item">
+        <span class="strip-k">自动发现 · ${esc(modeLabel)}</span>
+        <span class="strip-s">${d.running ? "扫描中…" : last ? `上次 ${esc(fmtTime(last.finishedAt ?? last.startedAt))} · ${esc(last.hostsScanned)} 台主机 · 新 ${esc(last.newCount)}` : "尚未运行"}</span>
+        <span class="strip-s">${d.nextRunAt ? `下次 ${esc(fmtTime(d.nextRunAt))}` : d.mode === "off" ? `<a href="${href("/settings")}">去设置打开</a>` : "仅手动触发"}</span>
+        <button class="btn sm" type="button" data-run-discovery ${d.mode === "off" || d.running ? "disabled" : ""}>立即扫描</button>
+      </div>
+    </div>`;
+}
+
+async function renderCaps(tab: CapTab): Promise<string> {
+  const ov = (await rest.overview()) as J;
+  const c = ov.current ?? {};
+  const s = ov.supported ?? {};
+  const b = ov.blacklist ?? {};
+  let body = "";
+  if (tab === "current") body = await renderCurrentTab();
+  else if (tab === "supported") body = await renderSupportedTab(ov);
+  else body = await renderBlacklistTab();
+  const t = (id: CapTab, label: string, count: string) =>
+    `<a class="${tab === id ? "active" : ""}" href="${href(`/caps?tab=${id}`)}">${label}<span class="count">${count}</span></a>`;
+  return `
+    <div class="page-head">
+      <div>
+        <h2>能力</h2>
+        <p>Agent 通过 MCP 看到的全部能力。写操作默认关闭；黑名单在 Full 模式下同样生效。</p>
+      </div>
+      <a class="btn primary" href="${href("/add")}">+ 添加</a>
+    </div>
+    ${strip(ov, tab)}
+    <nav class="cap-tabs">
+      ${t("current", "当前能力", String(c.total ?? 0))}
+      ${t("supported", "可支持能力", `${s.discovered ?? 0} · ${s.types ?? 0}`)}
+      ${t("blacklist", "黑名单", String(b.total ?? 0))}
+    </nav>
+    ${body}
+    <aside class="drawer" id="drawer" hidden></aside>`;
+}
+
+async function renderCurrentTab(): Promise<string> {
+  const data = (await rest.adapters()) as J;
+  const adapters: J[] = data.adapters ?? [];
+  if (!adapters.length) {
+    return `<div class="card empty">还没有能力。去 <a href="${href("/caps?tab=supported")}">可支持能力</a> 一键启用已发现的服务，或 <a href="${href("/add")}">+ 添加</a>。</div>`;
+  }
+  const rows = adapters
+    .map((a) => {
+      const st = capState(a);
+      const enabled = a.status !== "disabled";
+      const id = String(a.id);
+      return `<tr class="cap-row" data-row="${esc(id)}">
+        <td>${statusDot(st.kind === "ok", st.kind === "bad")}</td>
+        <td><div class="cap-name">${esc(a.name)}</div><div class="hint mono">${esc(id)}</div></td>
+        <td>${protoBadge(String(a.protocol))} ${a.ingress && a.ingress !== "native" ? ingressBadge(a.ingress) : ""}</td>
+        <td>${esc(a.toolCount ?? 0)}</td>
+        <td>${a.allowWrite === true ? tag("可写", "warn") : tag("只读")}</td>
+        <td>${tag(st.label, st.kind)}</td>
+        <td class="no-row">
+          <label class="switch" title="${enabled ? "停用（保留配置）" : "启用"}">
+            <input type="checkbox" data-toggle="${esc(id)}" ${enabled ? "checked" : ""} />
+            <span></span>
+          </label>
+        </td>
+        <td class="no-row actions">
+          ${
+            a.blacklisted && a.blacklistId
+              ? `<button class="btn sm" type="button" data-unblock="${esc(a.blacklistId)}">解除</button>`
+              : `<button class="btn sm danger" type="button" data-cap-bl="${esc(id)}">加入黑名单</button>`
+          }
+          <details class="menu">
+            <summary class="btn sm" aria-label="更多">…</summary>
+            <div class="menu-pop">
+              <a href="${href(`/add?edit=${encodeURIComponent(id)}`)}">配置</a>
+              <button type="button" data-ping="${esc(id)}">测试</button>
+              <button type="button" class="danger" data-del="${esc(id)}">删除</button>
+            </div>
+          </details>
+        </td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div class="table-wrap">
+      <table class="caps">
+        <thead><tr><th></th><th>名称</th><th>类型</th><th>Tools</th><th>写</th><th>状态</th><th>启用</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="hint">点一行查看它暴露给 Agent 的 tools，可按工具单独屏蔽。</p>`;
+}
+
+function catalogCards(protocols: J[], registered: Record<string, number>): string {
+  const groups = new Map<string, J[]>();
+  for (const p of protocols) {
+    const k = p.pack && PACK_LABEL[p.pack] ? p.pack : "other";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(p);
+  }
+  const special = `
+    <div class="type-group" data-group="entry">
+      <h4>其他接入方式</h4>
+      <div class="type-grid">
+        <a class="type-card" href="${href("/import")}" data-search="import schema openapi wsdl proto graphql asyncapi 导入">
+          <strong>导入 Schema</strong><span>OpenAPI / WSDL / proto / GraphQL SDL / AsyncAPI 文件或 URL</span></a>
+        <a class="type-card" href="${href("/discovery")}" data-search="scan host 扫描 单主机">
+          <strong>扫描单个主机</strong><span>对一个 host 做指纹识别，再逐条确认</span></a>
+        <a class="type-card" href="${href("/add?type=mcp_bridge")}" data-search="mcp server bridge 兜底">
+          <strong>MCP Server（兜底）</strong><span>导入 mcpServers JSON，作为最后手段</span></a>
+        <a class="type-card" href="${href("/partner")}" data-search="partner 伙伴 应用">
+          <strong>Partner 应用</strong><span>应用通过 Partner 协议自注册，不需要实现 MCP</span></a>
+      </div>
+    </div>`;
+  const body = PACK_ORDER.filter((k) => groups.has(k))
+    .map((k) => {
+      const cards = groups
+        .get(k)!
+        .map((p) => {
+          const n = registered[p.protocol] ?? 0;
+          return `<a class="type-card" href="${href(`/add?type=${encodeURIComponent(p.protocol)}`)}" data-search="${esc(`${p.protocol} ${p.title} ${p.summary}`.toLowerCase())}">
+            <strong>${esc(p.title)}</strong>
+            <span>${esc(p.summary)}</span>
+            <em>${protoBadge(p.protocol)}${n ? ` ${tag(`已添加 ${n}`, "ok")}` : ""}</em>
+          </a>`;
+        })
+        .join("");
+      return `<div class="type-group" data-group="${esc(k)}"><h4>${esc(PACK_LABEL[k] ?? k)} <span class="hint">${groups.get(k)!.length}</span></h4><div class="type-grid">${cards}</div></div>`;
+    })
+    .join("");
+  return special + body;
+}
+
+function candidateCard(c: J, i: number): string {
+  const needs = c.needsConfig === true;
+  const fields: string[] = [];
+  for (const k of c.missing ?? []) {
+    fields.push(`<div class="field"><label>${esc(k)}</label><input name="cfg:${esc(k)}" required /></div>`);
+  }
+  for (const f of c.credentials ?? []) {
+    fields.push(
+      `<div class="field"><label>${esc(f.label)}</label><input name="cred:${esc(f.key)}" type="${f.secret ? "password" : "text"}" autocomplete="off" /></div>`,
+    );
+  }
+  return `<div class="cand-card ${c.online ? "" : "offline"}">
+    <div class="cand-head">
+      ${statusDot(c.online === true, c.online === false)}
+      ${protoBadge(String(c.protocol))}
+      <strong>${esc(c.title || c.host)}</strong>
+      ${needs ? tag("需要配置", "warn") : tag("可一键启用", "ok")}
+    </div>
+    <div class="hint mono">${esc(c.url)}</div>
+    <div class="hint">${esc(SOURCE_LABEL[c.source] ?? c.source)} · 首次 ${esc(fmtTime(c.firstSeen))}${c.online ? "" : " · 当前离线"}</div>
+    <form class="cand-form" data-cand="${i}">
+      ${needs && fields.length ? `<div class="cand-fields">${fields.join("")}</div>` : ""}
+      <div class="row-actions">
+        <button class="btn primary sm" type="submit">${needs ? "填写并启用" : "一键启用"}</button>
+        <button class="btn sm" type="button" data-dismiss="${i}">忽略</button>
+        <button class="btn sm danger" type="button" data-cand-bl="${i}">加入黑名单</button>
+      </div>
+    </form>
+  </div>`;
+}
+
+let candidateList: J[] = [];
+
+async function renderSupportedTab(ov: J): Promise<string> {
+  const [protocols, cands, adapters] = await Promise.all([loadProtocols(), rest.discoveryCandidates("new"), rest.adapters()]);
+  candidateList = ((cands as J).candidates ?? []) as J[];
+  candidateList.sort((a, b) => Number(a.needsConfig) - Number(b.needsConfig) || Number(b.online) - Number(a.online));
+  const registered: Record<string, number> = {};
+  for (const a of ((adapters as J).adapters ?? []) as J[]) registered[a.protocol] = (registered[a.protocol] ?? 0) + 1;
+  const d = ov.discovery ?? {};
+  const discovered = candidateList.length
+    ? `<div class="cand-grid">${candidateList.map((c, i) => candidateCard(c, i)).join("")}</div>`
+    : `<div class="card empty">${
+        d.mode === "off"
+          ? `自动发现已关闭。去 <a href="${href("/settings")}">设置</a> 打开，或下方选择类型手动添加。`
+          : d.lastRun
+            ? "上次扫描没有发现新的服务。"
+            : "还没扫描过。点「立即扫描」或等待自动扫描。"
+      }</div>`;
+  return `
+    <section class="sec">
+      <div class="sec-head">
+        <h3>已发现，可一键启用 <span class="hint">${candidateList.length}</span></h3>
+        <span class="hint">只扫私网（本机、网卡所在 /24、mDNS/SSDP 应答者、手动范围）。启用后默认只读，不会打开写。</span>
+      </div>
+      ${discovered}
+    </section>
+    <section class="sec">
+      <div class="sec-head">
+        <h3>全部支持的类型 <span class="hint">${protocols.length}</span></h3>
+        <input class="search" id="type-search" placeholder="搜索类型：redis、kafka、opc…" />
+      </div>
+      <div id="type-catalog">${catalogCards(protocols, registered)}</div>
+    </section>`;
+}
+
+async function renderBlacklistTab(): Promise<string> {
+  const [bl, adapters] = await Promise.all([rest.blacklist(), rest.adapters()]);
+  const entries: J[] = (bl as J).entries ?? [];
+  const kindLabel = (k: string) => (k === "capability" ? tag("能力实例", "warn") : k === "tool" ? tag("工具", "warn") : tag("目标", "bad"));
+  const matcher = (e: J) => {
+    const k = e.kind ?? "target";
+    if (k === "capability") return `<code>${esc(e.adapterId)}</code>`;
+    if (k === "tool") return `<code>${esc(e.pattern)}</code>`;
+    return e.host ? `<code>${esc(e.host)}:${esc(e.port)}</code>` : `<code>${esc(e.url ?? e.id)}</code>`;
+  };
+  const rows = entries
+    .map(
+      (e) => `<tr>
+        <td>${kindLabel(e.kind ?? "target")}</td>
+        <td>${matcher(e)}</td>
+        <td>${e.protocol && e.protocol !== "*" ? protoBadge(String(e.protocol)) : "—"}</td>
+        <td>${esc(e.reason ?? "—")}</td>
+        <td class="hint">${esc(fmtTime(e.createdAt))}</td>
+        <td><button class="btn sm" type="button" data-unblock="${esc(e.id)}">解除</button></td>
+      </tr>`,
+    )
+    .join("");
+  const adapterOpts = (((adapters as J).adapters ?? []) as J[]).map((a) => `<option value="${esc(a.id)}">${esc(a.id)}</option>`).join("");
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>范围</th><th>匹配</th><th>协议</th><th>原因</th><th>时间</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6" class="empty">黑名单是空的。可以在当前能力行、工具抽屉或已发现卡片上一键加入。</td></tr>`}</tbody>
+      </table>
+    </div>
+    <details class="card">
+      <summary>手动添加</summary>
+      <form id="bl-add" class="bl-form">
+        <div class="field"><label>范围</label>
+          <select name="kind">
+            <option value="target">目标（协议 + 主机 + 端口）</option>
+            <option value="capability">能力实例</option>
+            <option value="tool">工具（名称或通配）</option>
+          </select>
+        </div>
+        <div class="bl-k" data-k="target">
+          <div class="field"><label>协议</label><input name="protocol" placeholder="redis / mqtt / openapi" /></div>
+          <div class="field"><label>主机</label><input name="host" placeholder="10.0.0.8" /></div>
+          <div class="field"><label>端口</label><input name="port" type="number" min="1" max="65535" /></div>
+          <div class="field"><label>或 URL</label><input name="url" placeholder="mqtt://10.0.0.8:1883" /></div>
+        </div>
+        <div class="bl-k" data-k="capability" hidden>
+          <div class="field"><label>能力</label><select name="adapterId">${adapterOpts || `<option value="">（没有已添加的能力）</option>`}</select></div>
+        </div>
+        <div class="bl-k" data-k="tool" hidden>
+          <div class="field"><label>工具</label><input name="pattern" placeholder="redis.*.flushall 或 openapi.shop.deleteOrder" />
+          <div class="hint">* 匹配一段，** 匹配任意多段；不接受单独的 *</div></div>
+        </div>
+        <div class="field"><label>原因（可选）</label><input name="reason" /></div>
+        <button class="btn primary" type="submit">加入黑名单</button>
+      </form>
+    </details>`;
+}
+
+async function openDrawer(id: string): Promise<void> {
+  const drawer = document.getElementById("drawer");
+  if (!drawer) return;
+  drawer.hidden = false;
+  drawer.innerHTML = `<div class="drawer-head"><strong>${esc(id)}</strong><button class="btn sm" type="button" data-close-drawer>✕</button></div><div class="hint">加载 tools…</div>`;
+  try {
+    const [tools, one] = await Promise.all([rest.tools("business"), rest.adapter(id)]);
+    const a = (one as J).adapter ?? {};
+    const list = (((tools as J).tools ?? []) as J[]).filter((t) => t.adapterId === id);
+    const rows = list
+      .map((t) => {
+        const ro = t.annotations?.readOnlyHint === true;
+        const wr = t.annotations?.destructiveHint === true;
+        return `<div class="tool-row ${t.blocked ? "blocked" : ""}">
+          <div>
+            <div class="mono">${esc(t.name)}</div>
+            <div class="hint">${esc(t.description ?? "")}</div>
+          </div>
+          <div class="row-actions">
+            ${ro ? tag("只读") : wr ? tag("写", "warn") : ""}
+            ${
+              t.blocked
+                ? `${tag("已屏蔽", "bad")} <button class="btn sm" type="button" data-unblock="${esc(t.blacklistId)}">解除</button>`
+                : `<button class="btn sm danger" type="button" data-tool-bl="${esc(t.name)}">屏蔽</button>`
+            }
+            <a class="btn sm" href="${href(`/tools/${encodeURIComponent(String(t.name))}`)}">试调用</a>
+          </div>
+        </div>`;
+      })
+      .join("");
+    const st = capState(a);
+    drawer.innerHTML = `
+      <div class="drawer-head">
+        <div><strong>${esc(a.name ?? id)}</strong> ${protoBadge(String(a.protocol ?? ""))} ${tag(st.label, st.kind)}</div>
+        <button class="btn sm" type="button" data-close-drawer>✕</button>
+      </div>
+      <div class="hint mono">${esc(id)}</div>
+      ${a.error ? `<div class="err-box">${esc(a.error)}</div>` : ""}
+      <div class="row-actions">
+        <a class="btn sm" href="${href(`/add?edit=${encodeURIComponent(id)}`)}">配置</a>
+        <button class="btn sm" type="button" data-ping="${esc(id)}">测试</button>
+      </div>
+      <h4>Tools <span class="hint">${list.length}</span></h4>
+      ${rows || `<div class="empty">${a.status === "disabled" ? "已停用，没有暴露 tools。" : "没有 tools。"}</div>`}
+      <details><summary class="hint">配置（已脱敏）</summary><pre>${esc(pretty(a.config ?? {}))}</pre></details>`;
+  } catch (err) {
+    drawer.innerHTML += `<div class="err-box">${esc(errText(err))}</div>`;
+  }
+}
+
+async function act(fn: () => Promise<unknown>, ok: string, rerender = true): Promise<void> {
+  try {
+    await fn();
+    showToast("ok", ok);
+    if (rerender) await render();
+  } catch (err) {
+    showToast("err", errText(err));
+  }
+}
+
+function bindCaps(tab: CapTab): void {
+  const content = document.querySelector(".content");
+  content?.addEventListener("click", async (ev) => {
+    const el = ev.target as HTMLElement;
+    const btn = el.closest("button") as HTMLButtonElement | null;
+    if (btn?.dataset.closeDrawer !== undefined && btn?.hasAttribute("data-close-drawer")) {
+      const d = document.getElementById("drawer");
+      if (d) d.hidden = true;
+      return;
+    }
+    if (btn?.hasAttribute("data-run-discovery")) {
+      btn.disabled = true;
+      btn.textContent = "扫描中…";
+      await act(async () => {
+        const r = (await rest.runDiscovery(true)) as J;
+        showToast("ok", `扫描完成：${r.run?.hostsScanned ?? 0} 台主机，发现 ${r.run?.found ?? 0}，新 ${r.run?.newCount ?? 0}`);
+      }, "已刷新");
+      return;
+    }
+    if (btn?.dataset.capBl) {
+      const id = btn.dataset.capBl;
+      if (!window.confirm(`把能力 ${id} 加入黑名单？它的 tools 会从 Agent 列表消失，调用会被拒绝。`)) return;
+      await act(() => rest.addBlacklist({ kind: "capability", adapterId: id, reason: "console" }), `已拉黑 ${id}`);
+      return;
+    }
+    if (btn?.dataset.toolBl) {
+      const name = btn.dataset.toolBl;
+      await act(() => rest.addBlacklist({ kind: "tool", pattern: name, reason: "console" }), `已屏蔽 ${name}`, false);
+      const row = document.querySelector("tr.cap-row[data-open]") as HTMLElement | null;
+      const id = row?.dataset.row;
+      if (id) await openDrawer(id);
+      return;
+    }
+    if (btn?.dataset.unblock) {
+      const id = btn.dataset.unblock;
+      const inDrawer = Boolean(btn.closest("#drawer"));
+      await act(() => rest.removeBlacklist(id), `已解除 ${id}`, !inDrawer);
+      if (inDrawer) {
+        const row = document.querySelector("tr.cap-row[data-open]") as HTMLElement | null;
+        if (row?.dataset.row) await openDrawer(row.dataset.row);
+      }
+      return;
+    }
+    if (btn?.dataset.ping) {
+      const id = btn.dataset.ping;
+      try {
+        const r = (await rest.ping(id)) as J;
+        showToast(r.ok ? "ok" : "err", r.ok ? `${id} 连接正常` : `${id}：${r.health?.detail ?? r.status}`);
+      } catch (err) {
+        showToast("err", errText(err));
+      }
+      return;
+    }
+    if (btn?.dataset.del) {
+      const id = btn.dataset.del;
+      if (!window.confirm(`删除能力 ${id}？会断开并移除它的所有 tools 和配置。`)) return;
+      await act(() => rest.deleteAdapter(id), `已删除 ${id}`);
+      return;
+    }
+    if (btn?.dataset.dismiss) {
+      const c = candidateList[Number(btn.dataset.dismiss)];
+      if (c) await act(() => rest.dismissCandidate(c.id), `已忽略 ${c.title || c.host}`);
+      return;
+    }
+    if (btn?.dataset.candBl) {
+      const c = candidateList[Number(btn.dataset.candBl)];
+      if (!c) return;
+      const body: Record<string, unknown> = { ...blacklistPayloadFromRecord(c), reason: "console discovery" };
+      await act(() => rest.addBlacklist(body), `已拉黑 ${c.id}`);
+      return;
+    }
+    const row = el.closest("tr.cap-row") as HTMLElement | null;
+    if (row && !el.closest(".no-row")) {
+      document.querySelectorAll("tr.cap-row[data-open]").forEach((r) => r.removeAttribute("data-open"));
+      row.setAttribute("data-open", "1");
+      await openDrawer(row.dataset.row ?? "");
+    }
+  });
+  content?.addEventListener("change", async (ev) => {
+    const input = ev.target as HTMLInputElement;
+    if (input.dataset.toggle) {
+      const id = input.dataset.toggle;
+      await act(() => rest.setEnabled(id, input.checked), input.checked ? `已启用 ${id}` : `已停用 ${id}（配置保留）`);
+    }
+  });
+  document.addEventListener(
+    "keydown",
+    (ev) => {
+      if (ev.key === "Escape") {
+        const d = document.getElementById("drawer");
+        if (d) d.hidden = true;
+      }
+    },
+    { once: true },
+  );
+  document.querySelectorAll("form.cand-form").forEach((f) => {
+    f.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const form = f as HTMLFormElement;
+      const c = candidateList[Number(form.dataset.cand)];
+      if (!c) return;
+      const fd = new FormData(form);
+      const config: Record<string, string> = {};
+      const credentials: Record<string, string> = {};
+      for (const [k, v] of fd.entries()) {
+        const val = String(v);
+        if (!val) continue;
+        if (k.startsWith("cfg:")) config[k.slice(4)] = val;
+        if (k.startsWith("cred:")) credentials[k.slice(5)] = val;
+      }
+      await act(async () => {
+        const r = (await rest.enableCandidate(c.id, { config, credentials })) as J;
+        showToast("ok", `已启用 ${r.registered?.id ?? c.id}（只读）`);
+      }, "已加入当前能力");
+    });
+  });
+  const search = document.getElementById("type-search") as HTMLInputElement | null;
+  search?.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    document.querySelectorAll<HTMLElement>("#type-catalog .type-card").forEach((card) => {
+      card.hidden = Boolean(q) && !(card.dataset.search ?? "").includes(q);
+    });
+    document.querySelectorAll<HTMLElement>("#type-catalog .type-group").forEach((g) => {
+      g.hidden = !g.querySelector(".type-card:not([hidden])");
+    });
+  });
+  const blForm = document.getElementById("bl-add") as HTMLFormElement | null;
+  if (blForm) {
+    const sync = () => {
+      const kind = (blForm.elements.namedItem("kind") as HTMLSelectElement).value;
+      blForm.querySelectorAll<HTMLElement>(".bl-k").forEach((b) => (b.hidden = b.dataset.k !== kind));
+    };
+    blForm.querySelector("select[name=kind]")?.addEventListener("change", sync);
+    blForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(blForm);
+      const kind = String(fd.get("kind"));
+      const body: Record<string, unknown> = { kind };
+      const reason = String(fd.get("reason") ?? "").trim();
+      if (reason) body.reason = reason;
+      if (kind === "target") {
+        for (const k of ["protocol", "host", "url"]) {
+          const v = String(fd.get(k) ?? "").trim();
+          if (v) body[k] = v;
+        }
+        const port = String(fd.get("port") ?? "").trim();
+        if (port) body.port = Number(port);
+      } else if (kind === "capability") body.adapterId = String(fd.get("adapterId") ?? "");
+      else body.pattern = String(fd.get("pattern") ?? "").trim();
+      await act(() => rest.addBlacklist(body), "已加入黑名单");
+    });
+  }
+  void tab;
+}
+
+// ─── 添加 / 配置 向导 ───
+
+function fieldInput(f: J, value: unknown): string {
+  const name = `f:${f.key}`;
+  const req = f.required ? "required" : "";
+  const ph = f.placeholder ? `placeholder="${esc(f.placeholder)}"` : "";
+  if (f.type === "boolean") {
+    const on = value === undefined ? f.default === true : value === true;
+    return `<label class="check"><input type="checkbox" name="${esc(name)}" ${on ? "checked" : ""} /> ${esc(f.label ?? f.key)}</label>`;
+  }
+  let control: string;
+  if (f.enum) {
+    control = `<select name="${esc(name)}" ${req}><option value=""></option>${(f.enum as unknown[])
+      .map((o) => `<option ${String(o) === String(value ?? f.default ?? "") ? "selected" : ""}>${esc(o)}</option>`)
+      .join("")}</select>`;
+  } else if (f.type === "object") {
+    control = `<textarea name="${esc(name)}" class="short" ${ph} spellcheck="false">${value === undefined ? "" : esc(pretty(value))}</textarea>`;
+  } else if (f.type === "array") {
+    const v = Array.isArray(value) ? value.join("\n") : "";
+    control = `<textarea name="${esc(name)}" class="short" ${ph} ${req}>${esc(v)}</textarea><div class="hint">每行一个</div>`;
+  } else if (f.secret) {
+    control = `<div class="secret"><input name="${esc(name)}" type="password" autocomplete="new-password" value="${esc(value ?? "")}" ${req} /><button class="btn sm" type="button" data-reveal>显示</button></div>`;
+  } else {
+    const type = f.type === "number" ? "number" : "text";
+    control = `<input name="${esc(name)}" type="${type}" value="${esc(value ?? "")}" ${ph} ${req} />`;
+  }
+  const oneOf = Array.isArray(f.oneOf) ? `<div class="hint">与 ${esc((f.oneOf as string[]).filter((k) => k !== f.key).join(" / "))} 任填其一</div>` : "";
+  return `<div class="field"><label>${esc(f.label ?? f.key)}${f.required ? ' <span class="req">*</span>' : f.oneOf ? ' <span class="req">*任一</span>' : ""}</label>${control}${f.description ? `<div class="hint">${esc(f.description)}</div>` : ""}${oneOf}</div>`;
+}
+
+let wizardSchema: J | undefined;
+let wizardEdit: string | undefined;
+let wizardBase: Record<string, unknown> = {};
+
+async function renderAdd(page: { type?: string; edit?: string; source?: string }): Promise<string> {
+  wizardSchema = undefined;
+  wizardEdit = page.edit;
+  wizardBase = {};
+  let existing: J | undefined;
+  let type = page.type;
+  if (page.edit) {
+    existing = ((await rest.adapter(page.edit)) as J).adapter;
+    type = existing?.protocol;
+    wizardBase = { ...(existing?.config ?? {}) };
+  }
+  const steps = (n: number) =>
+    `<div class="steps-h">${["选择类型", "配置", "测试并保存"].map((s, i) => `<span class="${i + 1 === n ? "on" : i + 1 < n ? "done" : ""}">${i + 1} · ${s}</span>`).join("")}</div>`;
+  if (!type) {
+    const [protocols, adapters] = await Promise.all([loadProtocols(), rest.adapters()]);
+    const registered: Record<string, number> = {};
+    for (const a of ((adapters as J).adapters ?? []) as J[]) registered[a.protocol] = (registered[a.protocol] ?? 0) + 1;
+    return `
+      <div class="page-head"><div><h2>添加能力</h2><p>选一种类型。自动发现到的服务在 <a href="${href("/caps?tab=supported")}">可支持能力</a> 里可以直接一键启用。</p></div>
+      <a class="btn" href="${href("/caps")}">返回</a></div>
+      ${steps(1)}
+      <input class="search" id="type-search" placeholder="搜索类型：redis、kafka、opc…" />
+      <div id="type-catalog">${catalogCards(protocols, registered)}</div>`;
+  }
+  const schema = ((await rest.protocol(type)) as J).schema;
+  wizardSchema = schema;
+  const cfg: Record<string, unknown> = existing?.config ?? {};
+  const fields: J[] = schema.fields ?? [];
+  const primary = fields.filter((f) => !f.advanced && f.key !== "allowWrite");
+  const advanced = fields.filter((f) => f.advanced);
+  const known = new Set(fields.map((f) => f.key));
+  const extras = Object.fromEntries(Object.entries(cfg).filter(([k]) => !known.has(k)));
+  const allowWrite = fields.find((f) => f.key === "allowWrite");
+  return `
+    <div class="page-head">
+      <div><h2>${existing ? `配置 ${esc(existing.id)}` : `添加 ${esc(schema.title)}`}</h2><p>${esc(schema.summary)}</p></div>
+      <a class="btn" href="${href(existing ? "/caps" : "/add")}">${existing ? "返回" : "换一种类型"}</a>
+    </div>
+    ${steps(existing ? 2 : 2)}
+    <form class="card wizard-form" id="wizard-form">
+      <div class="field"><label>名称 <span class="req">*</span></label>
+        <input name="name" value="${esc(existing?.name ?? `${schema.protocol.replace(/_/g, "-")}-1`)}" ${existing ? "disabled" : ""} required pattern="[\\w\\-]{1,64}" />
+        <div class="hint">tools 会以 <code>${esc(schema.protocol)}.&lt;名称&gt;.&lt;操作&gt;</code> 暴露给 Agent</div>
+      </div>
+      <div id="form-fields">
+        ${primary.map((f) => fieldInput(f, cfg[f.key])).join("")}
+        ${advanced.length ? `<details class="adv"><summary>高级选项（${advanced.length}）</summary>${advanced.map((f) => fieldInput(f, cfg[f.key])).join("")}</details>` : ""}
+        ${allowWrite ? `<div class="warn-box">${fieldInput(allowWrite, cfg.allowWrite)}<div>写路径默认关闭。只在确实需要时打开，Full 模式也不会替你打开。</div></div>` : ""}
+        ${Object.keys(extras).length ? `<div class="field"><label>其他键（表单未覆盖）</label><textarea name="extras" class="short" spellcheck="false">${esc(pretty(extras))}</textarea></div>` : `<input type="hidden" name="extras" value="{}" />`}
+      </div>
+      <label class="check"><input type="checkbox" id="raw-toggle" /> 使用原始 JSON</label>
+      <textarea id="raw-json" name="raw" hidden spellcheck="false"></textarea>
+      ${existing ? `<div class="hint">密钥显示为 ••••，保持不动即沿用原值。</div>` : ""}
+      <div class="row-actions">
+        <button class="btn" type="button" id="test-btn">测试连接</button>
+        <button class="btn primary" type="submit">${existing ? "保存配置" : "保存并启用"}</button>
+      </div>
+      <div id="wizard-out"></div>
+    </form>`;
+}
+
+function collectConfig(form: HTMLFormElement): Record<string, unknown> {
+  const raw = document.getElementById("raw-toggle") as HTMLInputElement | null;
+  if (raw?.checked) {
+    return JSON.parse((document.getElementById("raw-json") as HTMLTextAreaElement).value || "{}");
+  }
+  const fields: J[] = wizardSchema?.fields ?? [];
+  const cfg: Record<string, unknown> = {};
+  const extrasEl = form.elements.namedItem("extras") as HTMLTextAreaElement | HTMLInputElement | null;
+  if (extrasEl?.value.trim()) Object.assign(cfg, JSON.parse(extrasEl.value));
+  for (const f of fields) {
+    const el = form.elements.namedItem(`f:${f.key}`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+    if (!el) continue;
+    if (f.type === "boolean") {
+      const on = (el as HTMLInputElement).checked;
+      if (on || f.key === "allowWrite" || wizardBase[f.key] !== undefined) cfg[f.key] = on;
+      continue;
+    }
+    const v = el.value.trim();
+    if (!v) continue;
+    if (f.type === "number") cfg[f.key] = Number(v);
+    else if (f.type === "array") cfg[f.key] = v.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+    else if (f.type === "object") cfg[f.key] = JSON.parse(v);
+    else cfg[f.key] = v;
+  }
+  return cfg;
+}
+
+function missingGroups(cfg: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const g of (wizardSchema?.requiredAny ?? []) as string[][]) {
+    const ok = g.some((k) => {
+      const v = cfg[k];
+      return typeof v === "string" ? v.trim() !== "" : Array.isArray(v) ? v.length > 0 : v !== undefined && v !== null && v !== false;
+    });
+    if (!ok) out.push(g.join(" / "));
+  }
+  return out;
+}
+
+function bindAdd(): void {
+  const search = document.getElementById("type-search") as HTMLInputElement | null;
+  search?.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    document.querySelectorAll<HTMLElement>("#type-catalog .type-card").forEach((card) => {
+      card.hidden = Boolean(q) && !(card.dataset.search ?? "").includes(q);
+    });
+    document.querySelectorAll<HTMLElement>("#type-catalog .type-group").forEach((g) => {
+      g.hidden = !g.querySelector(".type-card:not([hidden])");
+    });
+  });
+  const form = document.getElementById("wizard-form") as HTMLFormElement | null;
+  if (!form || !wizardSchema) return;
+  const out = document.getElementById("wizard-out")!;
+  form.querySelectorAll("button[data-reveal]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const input = b.previousElementSibling as HTMLInputElement;
+      input.type = input.type === "password" ? "text" : "password";
+      b.textContent = input.type === "password" ? "显示" : "隐藏";
+    }),
+  );
+  const rawToggle = document.getElementById("raw-toggle") as HTMLInputElement;
+  const rawBox = document.getElementById("raw-json") as HTMLTextAreaElement;
+  const fieldsBox = document.getElementById("form-fields") as HTMLElement;
+  rawToggle.addEventListener("change", () => {
+    if (rawToggle.checked) {
+      try {
+        rawToggle.checked = false;
+        rawBox.value = pretty(collectConfig(form));
+        rawToggle.checked = true;
+      } catch (err) {
+        rawToggle.checked = false;
+        showToast("err", `表单里有无效 JSON：${errText(err)}`);
+        return;
+      }
+    }
+    rawBox.hidden = !rawToggle.checked;
+    fieldsBox.hidden = rawToggle.checked;
+    fieldsBox.querySelectorAll<HTMLInputElement>("[required]").forEach((i) => (i.disabled = rawToggle.checked));
+  });
+  const gather = (): { protocol: string; name: string; config: Record<string, unknown> } | undefined => {
+    let config: Record<string, unknown>;
+    try {
+      config = collectConfig(form);
+    } catch (err) {
+      out.innerHTML = `<div class="err-box">JSON 无效：${esc(errText(err))}</div>`;
+      return undefined;
+    }
+    const miss = missingGroups(config);
+    if (miss.length && !wizardEdit) {
+      out.innerHTML = `<div class="err-box">还缺必填项：${esc(miss.join("；"))}</div>`;
+      return undefined;
+    }
+    const name = String((form.elements.namedItem("name") as HTMLInputElement).value || "").trim();
+    return { protocol: String(wizardSchema.protocol), name, config };
+  };
+  document.getElementById("test-btn")?.addEventListener("click", async () => {
+    const g = gather();
+    if (!g) return;
+    if (wizardEdit) {
+      out.innerHTML = `<div class="hint">测试已保存的连接…</div>`;
+      try {
+        const r = (await rest.ping(wizardEdit)) as J;
+        out.innerHTML = r.ok ? `<div class="ok-box">连接正常</div>` : `<div class="err-box">${esc(r.health?.detail ?? r.status)}</div>`;
+      } catch (err) {
+        out.innerHTML = `<div class="err-box">${esc(errText(err))}</div>`;
+      }
+      return;
+    }
+    out.innerHTML = `<div class="hint">连接中…（不会保存，也不会暴露给 Agent）</div>`;
+    try {
+      const r = (await rest.testAdapter(g)) as J;
+      out.innerHTML = r.ok
+        ? `<div class="ok-box">连接成功 · ${esc(r.latencyMs)} ms · ${esc(r.toolCount)} 个 tools<br/><span class="hint mono">${esc((r.tools ?? []).slice(0, 12).join("  "))}</span></div>`
+        : `<div class="err-box">${esc(r.error?.code ?? "")} ${esc(r.error?.error ?? r.health?.detail ?? "连接失败")}</div>`;
+    } catch (err) {
+      out.innerHTML = `<div class="err-box">${esc(errText(err))}</div>`;
+    }
+  });
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const g = gather();
+    if (!g) return;
+    if (g.config.allowWrite === true && !window.confirm("你打开了 allowWrite，Agent 将能执行写操作。确认？")) return;
+    try {
+      if (wizardEdit) {
+        await rest.updateAdapter(wizardEdit, g.config);
+        showToast("ok", `已保存 ${wizardEdit}`);
+      } else {
+        const r = (await rest.createAdapter(g)) as J;
+        showToast("ok", `已添加 ${r.id}（${(r.tools ?? []).length} 个 tools）`);
+      }
+      location.hash = "/caps";
+    } catch (err) {
+      const body = (err as { body?: J }).body;
+      out.innerHTML = `<div class="err-box">${esc(body?.code ?? "")} ${esc(errText(err))}</div>`;
+    }
+  });
+}
+
+// ─── 活动 ───
+
+const ACT_LABEL: Record<string, string> = {
+  invoke: "调用",
+  policy: "策略",
+  mode_change: "模式",
+  unregister: "卸载",
+  discovery: "发现",
+  discovery_run: "发现",
+};
+
+async function renderActivity(): Promise<string> {
+  const data = (await rest.activity(150)) as J;
+  const items: J[] = data.items ?? [];
+  const counts = data.counts ?? {};
+  const onlyErr = new URLSearchParams(location.hash.split("?")[1] ?? "").get("filter") === "errors";
+  const list = onlyErr ? items.filter((i) => i.ok === false) : items;
+  const rows = list
+    .map(
+      (e) => `<div class="tl-row">
+        ${statusDot(e.ok === true, e.ok === false)}
+        <div>
+          <div class="tl-title">${tag(ACT_LABEL[e.type] ?? e.type)} ${esc(e.tool ?? "")} ${e.protocol ? protoBadge(String(e.protocol)) : ""}</div>
+          <div class="hint">${esc(e.detail ?? e.code ?? (e.ok ? "ok" : "fail"))}${e.adapterId ? ` · ${esc(e.adapterId)}` : ""}${e.code && e.detail ? ` · ${esc(e.code)}` : ""}</div>
+        </div>
+        <div class="tl-meta">${esc(fmtTime(e.at))}</div>
+      </div>`,
+    )
+    .join("");
+  return `
+    <div class="page-head">
+      <div><h2>活动</h2><p>调用、策略拒绝、启停、黑名单与自动发现运行，按时间倒序。密钥已脱敏。</p></div>
+      <nav class="cap-tabs small">
+        <a class="${onlyErr ? "" : "active"}" href="${href("/activity")}">全部</a>
+        <a class="${onlyErr ? "active" : ""}" href="${href("/activity?filter=errors")}">只看失败<span class="count">${esc(counts.errors ?? 0)}</span></a>
+      </nav>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>成功</h3><div class="metric">${esc(counts.success ?? 0)}</div></div>
+      <div class="card"><h3>失败</h3><div class="metric">${esc(counts.fail ?? 0)}</div></div>
+      <div class="card"><h3>发现运行</h3><div class="metric">${esc(counts.discoveryRuns ?? 0)}</div></div>
+      <div class="card"><h3>最近</h3><div class="metric" style="font-size:14px">${esc(fmtTime(items[0]?.at))}</div></div>
+    </div>
+    <div class="card timeline">${rows || `<div class="empty">还没有活动。</div>`}</div>`;
+}
+
+// ─── 设置 ───
+
+async function renderSettingsPage(): Promise<string> {
+  const [s, disc] = await Promise.all([rest.settings(), rest.discoverySettings().catch(() => undefined)]);
+  const st = s as J;
+  const d = (disc as J)?.settings;
+  const scope = (disc as J)?.scope ?? {};
+  const status = (disc as J)?.status ?? {};
+  const runs: J[] = d ? (((await rest.discoveryRuns(10)) as J).runs ?? []) : [];
+  const mode = st.security?.mode ?? "safe";
+  const radio = (v: string, label: string, hint: string) =>
+    `<label class="radio"><input type="radio" name="mode" value="${v}" ${d?.mode === v ? "checked" : ""}/> <strong>${label}</strong> <span class="hint">${hint}</span></label>`;
+  const runRows = runs
+    .map(
+      (r) => `<tr><td>${esc(fmtTime(r.startedAt))}</td><td>${esc(r.trigger)}</td><td>${esc(r.hostsScanned)}/${esc(r.hostsPlanned)}${r.truncated ? " (上限)" : ""}</td><td>${esc(r.found)}</td><td>${esc(r.newCount)}</td><td>${esc(r.durationMs ?? "—")} ms</td><td class="hint">${esc((r.errors ?? []).slice(0, 2).join("; "))}</td></tr>`,
+    )
+    .join("");
+  return `
+    <div class="page-head"><div><h2>设置</h2><p>自动发现、安全模式与运行信息。更细的页面在左侧「高级」里。</p></div></div>
+    ${
+      d
+        ? `<form class="card" id="disc-form">
+      <h3>自动发现</h3>
+      <div class="radios">
+        ${radio("auto", "自动", `每 ${d.intervalMinutes} 分钟扫描一次私网并列出候选`)}
+        ${radio("manual", "手动", "只在点「立即扫描」时运行")}
+        ${radio("off", "关闭", "不做任何网络发现")}
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>间隔（分钟）</label><input name="intervalMinutes" type="number" min="5" max="1440" value="${esc(d.intervalMinutes)}" /></div>
+        <div class="field"><label>单次主机上限</label><input name="hostCap" type="number" min="1" max="1024" value="${esc(d.hostCap)}" /></div>
+        <div class="field"><label>并发</label><input name="concurrency" type="number" min="1" max="64" value="${esc(d.concurrency)}" /></div>
+        <div class="field"><label>单端口超时（ms）</label><input name="timeoutMs" type="number" min="100" max="10000" value="${esc(d.timeoutMs)}" /></div>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="includeLocalhost" ${d.includeLocalhost ? "checked" : ""}/> 本机 127.0.0.1</label>
+        <label class="check"><input type="checkbox" name="includeInterfaces" ${d.includeInterfaces ? "checked" : ""}/> 网卡所在私网（每块网卡最多 /24）</label>
+        <label class="check"><input type="checkbox" name="multicast" ${d.multicast ? "checked" : ""}/> mDNS / SSDP 组播应答者</label>
+        <label class="check"><input type="checkbox" name="autoEnable" ${d.autoEnable ? "checked" : ""}/> 自动启用无需凭据的只读候选（默认关）</label>
+      </div>
+      <div class="form-grid two">
+        <div class="field"><label>手动范围（每行一个：主机 / 域名 / CIDR，最大 /16）</label><textarea name="scopes" class="short" placeholder="10.20.0.0/24&#10;nas.lan">${esc((d.scopes ?? []).join("\n"))}</textarea></div>
+        <div class="field"><label>排除（主机或 CIDR）</label><textarea name="exclude" class="short" placeholder="192.168.1.1">${esc((d.exclude ?? []).join("\n"))}</textarea></div>
+      </div>
+      <label class="check danger-check"><input type="checkbox" name="allowPublic" ${d.allowPublic ? "checked" : ""}/> 允许手动范围包含公网地址（仅对你有权扫描的网络打开）</label>
+      <details><summary class="hint">探测的协议（${(d.protocols ?? []).length}）</summary>
+        <textarea name="protocols" class="short">${esc((d.protocols ?? []).join(", "))}</textarea>
+      </details>
+      <p class="hint">私网：${esc((scope.privateRanges ?? []).join("、"))}。永不扫描：${esc((scope.neverScan ?? []).join("、"))}。</p>
+      <div class="row-actions">
+        <button class="btn primary" type="submit">保存</button>
+        <button class="btn" type="button" data-run-discovery ${d.mode === "off" ? "disabled" : ""}>立即扫描</button>
+        <span class="hint">${status.nextRunAt ? `下次自动扫描 ${esc(fmtTime(status.nextRunAt))}` : ""}</span>
+      </div>
+    </form>
+    <div class="table-wrap">
+      <table><thead><tr><th>开始</th><th>触发</th><th>主机</th><th>发现</th><th>新</th><th>耗时</th><th>错误</th></tr></thead>
+      <tbody>${runRows || `<tr><td colspan="7" class="empty">还没有运行记录。</td></tr>`}</tbody></table>
+    </div>`
+        : `<div class="warn-box">自动发现未运行（EVERYTHING2MCP_DISCOVERY_ENABLED=false）。</div>`
+    }
+    <div class="card">
+      <h3>安全模式</h3>
+      <p class="hint">当前 <strong>${esc(String(mode).toUpperCase())}</strong>。Full 跳过写闸和限流，但黑名单、元数据拒绝、审计仍生效，适配器的 allowWrite 也不会被打开。</p>
+      <div class="row-actions">
+        <button class="btn ${mode === "safe" ? "primary" : ""}" type="button" data-mode="safe">Safe</button>
+        <button class="btn ${mode === "full" ? "primary" : ""}" type="button" data-mode="full">Full Control</button>
+        <a class="btn" href="${href("/security")}">安全模块详情</a>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>版本</h3><div>${esc(st.app)} ${esc(st.version)}</div></div>
+      <div class="card"><h3>数据目录</h3><div class="mono small">${esc(st.dataDir)}</div></div>
+      <div class="card"><h3>传输</h3><div class="mono small">${esc(st.transport?.kind)} ${esc(st.transport?.host)}:${esc(st.transport?.port)}${esc(st.transport?.mcpPath)}</div></div>
+      <div class="card"><h3>HTTP token</h3><div>${st.transport?.tokenConfigured ? "已配置" : "未配置"}</div></div>
+    </div>
+    <details class="card"><summary class="hint">原始设置 JSON</summary><pre>${esc(pretty(st))}</pre></details>`;
+}
+
+function bindSettingsPage(): void {
+  const form = document.getElementById("disc-form") as HTMLFormElement | null;
+  document.querySelector("[data-run-discovery]")?.addEventListener("click", async (ev) => {
+    const b = ev.currentTarget as HTMLButtonElement;
+    b.disabled = true;
+    b.textContent = "扫描中…";
+    await act(async () => {
+      const r = (await rest.runDiscovery(true)) as J;
+      showToast("ok", `扫描完成：${r.run?.hostsScanned ?? 0} 台主机，发现 ${r.run?.found ?? 0}`);
+    }, "已刷新");
+  });
+  if (!form) return;
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const lines = (k: string) =>
+      String(fd.get(k) ?? "")
+        .split(/[\n,]+/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+    const body = {
+      mode: String(fd.get("mode") ?? "manual"),
+      intervalMinutes: Number(fd.get("intervalMinutes")),
+      hostCap: Number(fd.get("hostCap")),
+      concurrency: Number(fd.get("concurrency")),
+      timeoutMs: Number(fd.get("timeoutMs")),
+      includeLocalhost: fd.get("includeLocalhost") !== null,
+      includeInterfaces: fd.get("includeInterfaces") !== null,
+      multicast: fd.get("multicast") !== null,
+      autoEnable: fd.get("autoEnable") !== null,
+      allowPublic: fd.get("allowPublic") !== null,
+      scopes: lines("scopes"),
+      exclude: lines("exclude"),
+      protocols: lines("protocols"),
+    };
+    if (body.allowPublic && !window.confirm("允许扫描公网范围？请确认你对这些地址有授权。")) return;
+    await act(() => rest.saveDiscoverySettings(body), "自动发现设置已保存");
   });
 }
 
