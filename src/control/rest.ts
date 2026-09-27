@@ -572,7 +572,7 @@ async function overviewPayload(ctx: ManagementContext): Promise<Record<string, u
   return {
     ok: true,
     current: { total: snap.adapters.length, enabled, disabled, blacklisted: blockedCaps, failing, tools: snap.tools.length },
-    supported: { discovered: disc.discovered ?? 0, ready: disc.ready ?? 0, needsConfig: disc.needsConfig ?? 0, types: schemas.length },
+    supported: { discovered: disc.discovered ?? 0, ready: disc.ready ?? 0, needsConfig: disc.needsConfig ?? 0, failed: (disc as { failed?: number }).failed ?? 0, types: schemas.length },
     blacklist: {
       total: entries.length,
       target: entries.filter((e) => (e.kind ?? "target") === "target").length,

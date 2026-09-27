@@ -1141,7 +1141,7 @@ function strip(ov: J, tab: CapTab): string {
       <a class="strip-item ${tab === "supported" ? "on" : ""}" href="${href("/caps?tab=supported")}">
         <span class="strip-k">可支持能力</span>
         <span class="strip-v">${esc(s.discovered ?? 0)}<small> 已发现</small></span>
-        <span class="strip-s">可一键启用 ${esc(s.ready ?? 0)} · 需要配置 ${esc(s.needsConfig ?? 0)} · 类型 ${esc(s.types ?? 0)}</span>
+        <span class="strip-s">可一键启用 ${esc(s.ready ?? 0)} · 需要配置 ${esc(s.needsConfig ?? 0)}${s.failed ? ` · 启用失败 ${esc(s.failed)}` : ""} · 类型 ${esc(s.types ?? 0)}</span>
       </a>
       <a class="strip-item ${tab === "blacklist" ? "on" : ""}" href="${href("/caps?tab=blacklist")}">
         <span class="strip-k">黑名单</span>

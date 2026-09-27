@@ -441,8 +441,9 @@ export class AutoDiscovery {
     const visible = this.candidates.filter((c) => c.status === "new");
     return {
       discovered: visible.length,
-      ready: visible.filter((c) => !c.needsConfig).length,
-      needsConfig: visible.filter((c) => c.needsConfig).length,
+      ready: visible.filter((c) => !c.needsConfig && !c.lastError).length,
+      needsConfig: visible.filter((c) => c.needsConfig && !c.lastError).length,
+      failed: visible.filter((c) => c.lastError).length,
       online: this.candidates.filter((c) => c.online).length,
       enabled: this.candidates.filter((c) => c.status === "enabled").length,
       dismissed: this.candidates.filter((c) => c.status === "dismissed").length,

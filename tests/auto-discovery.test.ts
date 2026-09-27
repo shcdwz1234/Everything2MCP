@@ -211,6 +211,8 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
     await assert.rejects(() => d.enable(cand.id, {}));
     const [after] = await d.listCandidates();
     assert.ok(after!.lastError?.code, "error code recorded");
+    assert.equal(d.counts().ready, 0, "a failed candidate is not counted as 可一键启用");
+    assert.equal(d.counts().failed, 1);
     assert.equal(after!.status, "new");
     const ok = (await d.enable(cand.id, { config: { simulator: true } as never })) as { ok: boolean };
     assert.equal(ok.ok, true);
