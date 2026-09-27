@@ -1297,10 +1297,11 @@ function candidateCard(c: J, i: number): string {
       ${statusDot(c.online === true, c.online === false)}
       ${protoBadge(String(c.protocol))}
       <strong>${esc(c.title || c.host)}</strong>
-      ${needs ? tag("需要配置", "warn") : tag("可一键启用", "ok")}
+      ${c.lastError ? tag("启用失败", "bad") : needs ? tag("需要配置", "warn") : tag("可一键启用", "ok")}
     </div>
     <div class="hint mono">${esc(c.url)}</div>
     <div class="hint">${esc(SOURCE_LABEL[c.source] ?? c.source)} · 首次 ${esc(fmtTime(c.firstSeen))}${c.online ? "" : " · 当前离线"}</div>
+    ${c.lastError ? `<div class="hint err-text">上次启用失败（${esc(c.lastError.code)}）：${esc(c.lastError.message)}</div>` : ""}
     <form class="cand-form" data-cand="${i}">
       ${needs && fields.length ? `<div class="cand-fields">${fields.join("")}</div>` : ""}
       <div class="row-actions">

@@ -80,6 +80,8 @@ export interface AutoCandidate {
   needsConfig: boolean;
   missing: string[];
   credentials: CredentialField[];
+  /** Last failed 一键启用 (code + message, secrets never included). Cleared on success. */
+  lastError?: { code: string; message: string; at: string };
 }
 
 export interface CredentialField {
@@ -787,13 +789,23 @@ export class AutoDiscovery {
     applyCredentials(merged, c.credentials, input.credentials ?? {});
     merged.allowWrite = false;
     const name = sanitizeName(input.name?.trim() || this.uniqueName(c.suggestedName));
-    const res = (await callManagementTool(
-      "capability_register",
-      { suggestion: { protocol: c.protocol, name, config: merged, source: "discovery", confidence: c.confidence } },
-      this.deps.ctx,
-    )) as { id: string; tools: string[] };
+    let res: { id: string; tools: string[] };
+    try {
+      res = (await callManagementTool(
+        "capability_register",
+        { suggestion: { protocol: c.protocol, name, config: merged, source: "discovery", confidence: c.confidence } },
+        this.deps.ctx,
+      )) as { id: string; tools: string[] };
+    } catch (err) {
+      // Keep the reason on the card (e.g. an adapter without a live client) instead of re-offering 一键启用 blindly.
+      const e = err as { code?: string; message?: string };
+      c.lastError = { code: e.code ?? "E_INTERNAL", message: String(e.message ?? err).slice(0, 300), at: this.deps.now().toISOString() };
+      await this.persist();
+      throw err;
+    }
     c.status = "enabled";
     c.registeredId = res.id;
+    delete c.lastError;
     await this.persist();
     return { ok: true, candidate: { ...c }, registered: res };
   }

@@ -314,3 +314,4 @@ td.actions { display: flex; gap: 6px; align-items: center; justify-content: flex
   .token-box input { width: 120px; }
   .tl-row { grid-template-columns: 16px 1fr; }
 }
+.err-text { color: var(--danger); }

@@ -199,6 +199,25 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
     await assert.rejects(() => d.run(), /off/);
   });
 
+  it("a failed 一键启用 is kept on the candidate (lastError) and cleared on success", async () => {
+    const table: Record<string, DiscoveryCandidate[]> = {
+      "127.0.0.1": [{ protocol: "qdrant", url: "http://127.0.0.1:6333", hint: "", status: 1, config: { url: "http://127.0.0.1:6333" } }],
+    };
+    const { d } = await setup(table);
+    await d.updateSettings({ multicast: false, includeInterfaces: false });
+    await d.run();
+    const [cand] = await d.listCandidates();
+    assert.ok(cand);
+    await assert.rejects(() => d.enable(cand.id, {}));
+    const [after] = await d.listCandidates();
+    assert.ok(after!.lastError?.code, "error code recorded");
+    assert.equal(after!.status, "new");
+    const ok = (await d.enable(cand.id, { config: { simulator: true } as never })) as { ok: boolean };
+    assert.equal(ok.ok, true);
+    const [done] = await d.listCandidates();
+    assert.equal(done!.lastError, undefined);
+  });
+
   it("autoEnable registers only ready, readonly, non-blacklisted candidates", async () => {
     const table: Record<string, DiscoveryCandidate[]> = {
       "127.0.0.1": [
