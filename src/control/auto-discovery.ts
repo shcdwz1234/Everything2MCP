@@ -448,6 +448,11 @@ export class AutoDiscovery {
     };
   }
 
+  /** Registration ids that came from a discovery candidate (for the 来源 column). */
+  registeredIds(): Set<string> {
+    return new Set(this.candidates.map((c) => c.registeredId).filter((v): v is string => typeof v === "string"));
+  }
+
   async listCandidates(): Promise<AutoCandidate[]> {
     await this.load();
     await this.refreshStatuses();

@@ -38,6 +38,9 @@ describe("S4 netscope rules", () => {
     for (const ip of ["8.8.8.8", "172.32.0.1", "100.128.0.1"]) assert.equal(isPrivateIp(ip), false, ip);
     assert.equal(isNeverScan("169.254.169.254"), true);
     assert.equal(isNeverScan("169.254.10.10"), true);
+    // Alibaba metadata sits inside CGNAT 100.64/10 (treated as private) — still never scanned
+    assert.equal(isPrivateIp("100.100.100.200"), true);
+    assert.equal(isNeverScan("100.100.100.200"), true);
     assert.equal(isNeverScan("192.168.1.1"), false);
   });
 
@@ -188,6 +191,7 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
     const rec = app.registry.getRecord(res.registered.id)!;
     assert.equal(rec.config.accessKey, "AK");
     assert.equal(rec.config.allowWrite, false);
+    assert.ok(d.registeredIds().has(res.registered.id), "来源 = 自动发现");
     const again = await d.listCandidates();
     assert.equal(again[0]!.status, "enabled");
     await assert.rejects(() => d.enable(cand.id, {}), /Already enabled/);
@@ -258,6 +262,10 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
 
       await put("/api/adapters", { protocol: "sqlite", name: "mem", config: { filename: ":memory:" } }, "POST");
       await put("/api/blacklist", { kind: "tool", pattern: "sqlite.*.execute" }, "POST");
+      const listed = await j("/api/adapters");
+      const mem = listed.body.adapters.find((x: { id: string }) => x.id === "sqlite:mem");
+      assert.equal(mem.source, "manual");
+      assert.equal(mem.address, undefined, "file / memory specs have no network address");
       const ov = await j("/api/overview");
       assert.equal(ov.body.current.total, 1);
       assert.equal(ov.body.current.enabled, 1);

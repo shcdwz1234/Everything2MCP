@@ -1186,6 +1186,8 @@ async function renderCaps(tab: CapTab): Promise<string> {
     <aside class="drawer" id="drawer" hidden></aside>`;
 }
 
+const SOURCE_COL: Record<string, string> = { discovery: "自动发现", partner: "伙伴", manual: "手动" };
+
 async function renderCurrentTab(): Promise<string> {
   const data = (await rest.adapters()) as J;
   const adapters: J[] = data.adapters ?? [];
@@ -1201,6 +1203,7 @@ async function renderCurrentTab(): Promise<string> {
         <td>${statusDot(st.kind === "ok", st.kind === "bad")}</td>
         <td><div class="cap-name">${esc(a.name)}</div><div class="hint mono">${esc(id)}</div></td>
         <td>${protoBadge(String(a.protocol))} ${a.ingress && a.ingress !== "native" ? ingressBadge(a.ingress) : ""}</td>
+        <td>${tag(SOURCE_COL[String(a.source)] ?? "手动")}${a.address ? `<div class="hint mono">${esc(a.address)}</div>` : ""}</td>
         <td>${esc(a.toolCount ?? 0)}</td>
         <td>${a.allowWrite === true ? tag("可写", "warn") : tag("只读")}</td>
         <td>${tag(st.label, st.kind)}</td>
@@ -1231,7 +1234,7 @@ async function renderCurrentTab(): Promise<string> {
   return `
     <div class="table-wrap">
       <table class="caps">
-        <thead><tr><th></th><th>名称</th><th>类型</th><th>Tools</th><th>写</th><th>状态</th><th>启用</th><th></th></tr></thead>
+        <thead><tr><th></th><th>名称</th><th>类型</th><th>来源 / 地址</th><th>Tools</th><th>写</th><th>状态</th><th>启用</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>

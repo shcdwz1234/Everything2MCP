@@ -675,6 +675,7 @@ async function listAdapters(ctx: ManagementContext): Promise<RestResponse> {
     protocols: string[];
   };
   const blocked = new Set((await ctx.blacklist.list()).map((e) => e.id));
+  await ctx.discovery?.load();
   const adapters = listed.adapters.map((snap) => decorateAdapter(ctx, String(snap.id), snap, blocked));
   return { status: 200, body: { ok: true, adapters, protocols: listed.protocols } };
 }
@@ -716,6 +717,12 @@ function decorateAdapter(
       blacklistRef = capKey;
     }
   }
+  const ingress = record ? inferIngress(record.protocol, record.config) : undefined;
+  // 来源 column: discovery candidate → 自动发现, partner ingress → 伙伴, otherwise 手动.
+  const source = ctx.discovery?.registeredIds().has(id) ? "discovery" : ingress === "partner" ? "partner" : "manual";
+  // 地址 column: host:port only (never the raw URL, which may carry credentials).
+  const tgt = record ? targetFromConfig(record.protocol, record.config) : undefined;
+  const address = tgt?.host ? (tgt.port ? `${tgt.host}:${tgt.port}` : tgt.host) : undefined;
   return {
     ...snap,
     config: record?.config ?? {},
@@ -723,7 +730,9 @@ function decorateAdapter(
     updatedAt: record?.updatedAt,
     allowWrite: record?.config.allowWrite === true,
     disabled: record?.disabled === true,
-    ingress: record ? inferIngress(record.protocol, record.config) : undefined,
+    ingress,
+    source,
+    address,
     blacklisted,
     blacklistKind,
     blacklistId: blacklistRef,
