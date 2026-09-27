@@ -9,7 +9,7 @@ import type {
   RegistrationRecord,
 } from "../runtime/types.js";
 import { inferIngress } from "./ingress.js";
-import { assertNotBlacklisted, type BlacklistStore } from "./blacklist.js";
+import { assertInvokeNotBlacklisted, assertNotBlacklisted, type BlacklistStore } from "./blacklist.js";
 import { JsonStore } from "./store.js";
 
 export interface LiveInstance {
@@ -206,7 +206,12 @@ export class ToolRegistry {
         details: { tool: toolName },
       });
     }
-    await assertNotBlacklisted(this.blacklist, inst.record.protocol, inst.record.config);
+    await assertInvokeNotBlacklisted(this.blacklist, {
+      protocol: inst.record.protocol,
+      config: inst.record.config,
+      adapterId: inst.record.id,
+      toolName,
+    });
     const rawTimeout = inst.record.config.timeoutMs;
     const timeoutMs = typeof rawTimeout === "number" && rawTimeout > 0 ? rawTimeout : undefined;
     return invokeWithMiddleware(() => inst.adapter.invoke(binding.localName, args), {

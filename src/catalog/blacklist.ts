@@ -11,15 +11,78 @@ export interface BlacklistTarget {
   url?: string;
 }
 
+/**
+ * Blacklist granularity (S3):
+ * - "target": protocol + host + port (or normalized url). v1 semantics.
+ * - "capability": one registered capability instance, by adapterId (`protocol:name`).
+ * - "tool": one tool name or a glob over `protocol.name.op` (`*` = one segment,
+ *   `**` = any run of segments), e.g. `redis.*.flushall`.
+ * Non-target entries keep host "" / port 0 so older readers stay type-compatible.
+ */
+export type BlacklistKind = "target" | "capability" | "tool";
+
 export interface BlacklistEntry extends BlacklistTarget {
   id: string;
+  /** Missing on v1 files → "target". */
+  kind?: BlacklistKind;
+  /** kind=capability */
+  adapterId?: string;
+  /** kind=tool: exact tool name or glob */
+  pattern?: string;
   reason?: string;
   createdAt: string;
 }
 
 export interface BlacklistFile {
-  version: 1;
+  /** 1 = target-only (written while every entry is a target, so older builds still read it); 2 = mixed kinds. */
+  version: 1 | 2;
   entries: BlacklistEntry[];
+}
+
+export function entryKind(entry: Pick<BlacklistEntry, "kind">): BlacklistKind {
+  return entry.kind ?? "target";
+}
+
+export function capabilityBlacklistId(adapterId: string): string {
+  return `cap|${adapterId.trim()}`;
+}
+
+export function toolBlacklistId(pattern: string): string {
+  return `tool|${pattern.trim()}`;
+}
+
+const TOOL_PATTERN = /^[A-Za-z0-9_.*:-]+$/;
+
+/** `*` matches one dot-free segment chunk, `**` matches anything (including dots). */
+export function toolPatternToRegExp(pattern: string): RegExp {
+  let re = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i]!;
+    if (ch === "*") {
+      if (pattern[i + 1] === "*") {
+        re += ".*";
+        i++;
+      } else {
+        re += "[^.]*";
+      }
+    } else {
+      re += ch.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+export function toolPatternMatches(pattern: string, toolName: string): boolean {
+  if (pattern === toolName) return true;
+  if (!pattern.includes("*")) return false;
+  return toolPatternToRegExp(pattern).test(toolName);
+}
+
+export interface BlacklistSubject {
+  protocol?: string;
+  config?: JsonObject;
+  adapterId?: string;
+  toolName?: string;
 }
 
 /**
@@ -275,11 +338,11 @@ export class BlacklistStore {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as BlacklistFile;
-      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+      if (!parsed || (parsed.version !== 1 && parsed.version !== 2) || !Array.isArray(parsed.entries)) {
         this.cache = [];
         return this.cache;
       }
-      this.cache = parsed.entries;
+      this.cache = parsed.entries.map((e) => (e.kind ? e : { ...e, kind: "target" as const }));
       return this.cache;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
@@ -294,12 +357,92 @@ export class BlacklistStore {
   async save(entries: BlacklistEntry[]): Promise<void> {
     this.cache = entries;
     await mkdir(dirname(this.filePath), { recursive: true });
-    const body: BlacklistFile = { version: 1, entries };
+    const mixed = entries.some((e) => entryKind(e) !== "target");
+    // v1 readers ignore unknown keys but would treat v2 as empty; stay on v1 while target-only.
+    const body: BlacklistFile = mixed
+      ? { version: 2, entries }
+      : { version: 1, entries: entries.map(({ kind: _k, ...rest }) => rest) };
     await writeFile(this.filePath, `${JSON.stringify(body, null, 2)}\n`, "utf8");
     if (this.onPersist) await this.onPersist();
   }
 
   async add(input: Record<string, unknown>): Promise<BlacklistEntry> {
+    const kind = typeof input.kind === "string" ? input.kind : undefined;
+    if (kind === "capability" || (!kind && typeof input.adapterId === "string" && !input.protocol)) {
+      return this.addCapability(input);
+    }
+    if (kind === "tool" || (!kind && typeof input.pattern === "string" && !input.protocol)) {
+      return this.addTool(input);
+    }
+    if (kind && kind !== "target") {
+      throw new AdapterError("E_INVALID_ARGUMENT", `Unknown blacklist kind: ${kind} (target | capability | tool)`);
+    }
+    return this.addTarget(input);
+  }
+
+  private async upsertEntry(entry: BlacklistEntry, reason: unknown): Promise<BlacklistEntry> {
+    const all = await this.list();
+    const existing = all.find((e) => e.id === entry.id);
+    if (existing) {
+      if (typeof reason === "string" && reason.trim()) {
+        existing.reason = reason.trim();
+        await this.save([...all]);
+      }
+      return existing;
+    }
+    await this.save([...all, entry]);
+    return entry;
+  }
+
+  private async addCapability(input: Record<string, unknown>): Promise<BlacklistEntry> {
+    const adapterId = typeof input.adapterId === "string" ? input.adapterId.trim() : "";
+    const sep = adapterId.indexOf(":");
+    if (sep <= 0 || sep === adapterId.length - 1) {
+      throw new AdapterError("E_INVALID_ARGUMENT", "capability blacklist needs adapterId like protocol:name", {
+        details: { adapterId },
+      });
+    }
+    return this.upsertEntry(
+      {
+        id: capabilityBlacklistId(adapterId),
+        kind: "capability",
+        adapterId,
+        protocol: canonicalProtocol(adapterId.slice(0, sep)),
+        host: "",
+        port: 0,
+        reason: typeof input.reason === "string" && input.reason.trim() ? input.reason.trim() : undefined,
+        createdAt: new Date().toISOString(),
+      },
+      input.reason,
+    );
+  }
+
+  private async addTool(input: Record<string, unknown>): Promise<BlacklistEntry> {
+    const pattern = typeof input.pattern === "string" ? input.pattern.trim() : typeof input.tool === "string" ? input.tool.trim() : "";
+    if (!pattern || !TOOL_PATTERN.test(pattern) || /^[*.]+$/.test(pattern)) {
+      throw new AdapterError(
+        "E_INVALID_ARGUMENT",
+        "tool blacklist needs pattern: an exact tool name or glob like redis.*.flushall (a bare * is refused)",
+        { details: { pattern } },
+      );
+    }
+    const first = pattern.split(".")[0] ?? "";
+    return this.upsertEntry(
+      {
+        id: toolBlacklistId(pattern),
+        kind: "tool",
+        pattern,
+        protocol: first && !first.includes("*") ? canonicalProtocol(first) : "*",
+        host: "",
+        port: 0,
+        reason: typeof input.reason === "string" && input.reason.trim() ? input.reason.trim() : undefined,
+        createdAt: new Date().toISOString(),
+      },
+      input.reason,
+    );
+  }
+
+  private async addTarget(input: Record<string, unknown>): Promise<BlacklistEntry> {
     const target = targetFromInput(input);
     const id = blacklistId(target);
     const all = await this.list();
@@ -313,6 +456,7 @@ export class BlacklistStore {
     }
     const entry: BlacklistEntry = {
       id,
+      kind: "target",
       protocol: target.protocol,
       host: target.host,
       port: target.port,
@@ -350,9 +494,46 @@ export class BlacklistStore {
   async matchCandidate(candidate: DiscoveryCandidate): Promise<BlacklistEntry | undefined> {
     return this.matchTarget(targetFromCandidate(candidate));
   }
+
+  async matchAdapter(adapterId: string | undefined): Promise<BlacklistEntry | undefined> {
+    if (!adapterId) return undefined;
+    return this.find(capabilityBlacklistId(adapterId));
+  }
+
+  async matchTool(toolName: string | undefined): Promise<BlacklistEntry | undefined> {
+    if (!toolName) return undefined;
+    const all = await this.list();
+    return all.find((e) => entryKind(e) === "tool" && e.pattern && toolPatternMatches(e.pattern, toolName));
+  }
+
+  /** First hit in order target → capability → tool. */
+  async matchSubject(subject: BlacklistSubject): Promise<BlacklistEntry | undefined> {
+    if (subject.protocol && subject.config) {
+      const hit = await this.matchConfig(subject.protocol, subject.config);
+      if (hit) return hit;
+    }
+    const cap = await this.matchAdapter(subject.adapterId);
+    if (cap) return cap;
+    return this.matchTool(subject.toolName);
+  }
 }
 
 export function blacklistedError(hit: BlacklistEntry): AdapterError {
+  const kind = entryKind(hit);
+  if (kind === "capability") {
+    return new AdapterError(
+      "E_BLACKLISTED",
+      `Capability ${hit.adapterId} is blacklisted. Remove it from the blacklist to invoke.`,
+      { protocol: hit.protocol, details: { blacklistId: hit.id, kind, adapterId: hit.adapterId, reason: hit.reason } },
+    );
+  }
+  if (kind === "tool") {
+    return new AdapterError(
+      "E_BLACKLISTED",
+      `Tool is blacklisted by pattern ${hit.pattern}. Remove it from the blacklist to invoke.`,
+      { protocol: hit.protocol, details: { blacklistId: hit.id, kind, pattern: hit.pattern, reason: hit.reason } },
+    );
+  }
   return new AdapterError(
     "E_BLACKLISTED",
     `Target is blacklisted (${hit.protocol} ${hit.host}:${hit.port}). Remove it from the blacklist to register or invoke.`,
@@ -370,5 +551,15 @@ export async function assertNotBlacklisted(
 ): Promise<void> {
   if (!store) return;
   const hit = await store.matchConfig(protocol, config);
+  if (hit) throw blacklistedError(hit);
+}
+
+/** Invoke-time gate: target, capability instance, and tool pattern. */
+export async function assertInvokeNotBlacklisted(
+  store: BlacklistStore | undefined,
+  subject: BlacklistSubject,
+): Promise<void> {
+  if (!store) return;
+  const hit = await store.matchSubject(subject);
   if (hit) throw blacklistedError(hit);
 }

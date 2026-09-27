@@ -11,6 +11,7 @@ import { allConfigSchemas, configSchemaFor, checkRequiredBySchema, missingRequir
 import { hasProtocol, createAdapter } from "../runtime/bootstrap.js";
 import { validateRegistration, assertNotBlacklisted } from "../catalog/index.js";
 import { assertConfigTargetsAllowed } from "./policy.js";
+import { capabilityBlacklistId } from "../catalog/blacklist.js";
 import {
   assertPartnerToken,
   partnerHeartbeat,
@@ -481,11 +482,23 @@ function decorateAdapter(
 ): Record<string, unknown> {
   const record = ctx.registry.getRecord(id);
   let blacklisted = false;
+  let blacklistKind: "target" | "capability" | undefined;
+  let blacklistRef: string | undefined;
   if (record) {
     const target = targetFromConfig(record.protocol, record.config);
     if (target) {
       const key = blacklistId(target);
-      blacklisted = blocked ? blocked.has(key) : false;
+      if (blocked?.has(key)) {
+        blacklisted = true;
+        blacklistKind = "target";
+        blacklistRef = key;
+      }
+    }
+    const capKey = capabilityBlacklistId(id);
+    if (!blacklisted && blocked?.has(capKey)) {
+      blacklisted = true;
+      blacklistKind = "capability";
+      blacklistRef = capKey;
     }
   }
   return {
@@ -496,6 +509,8 @@ function decorateAdapter(
     allowWrite: record?.config.allowWrite === true,
     ingress: record ? inferIngress(record.protocol, record.config) : undefined,
     blacklisted,
+    blacklistKind,
+    blacklistId: blacklistRef,
   };
 }
 

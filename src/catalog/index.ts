@@ -7,8 +7,12 @@ export {
   targetFromConfig,
   targetFromInput,
   assertNotBlacklisted,
+  assertInvokeNotBlacklisted,
+  capabilityBlacklistId,
+  toolBlacklistId,
+  toolPatternMatches,
 } from "./blacklist.js";
-export type { BlacklistEntry, BlacklistTarget } from "./blacklist.js";
+export type { BlacklistEntry, BlacklistTarget, BlacklistKind } from "./blacklist.js";
 export { ToolRegistry, makeId, qualify } from "./registry.js";
 export type { LiveInstance } from "./registry.js";
 export {

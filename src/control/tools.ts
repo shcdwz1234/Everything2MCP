@@ -221,23 +221,25 @@ export function managementToolSchemas(config: AppConfig): McpToolSchema[] {
     {
       name: "mcp_blacklist_add",
       description:
-        "Add a protocol+host+port (or network url) to the blacklist. Blocks mcp_add, discovery one-click register, and invoke on matching adapters.",
+        "Add a blacklist entry. kind=target (default): protocol + host+port or network url; blocks mcp_add, discovery register and invoke on matching adapters. kind=capability: adapterId (protocol:name); hides and blocks that one instance. kind=tool: pattern (exact tool name or glob, * = one segment, ** = any, e.g. redis.*.flushall); hides and blocks matching tools. Blacklist still applies in Full mode.",
       inputSchema: {
         type: "object",
         properties: {
+          kind: { type: "string", enum: ["target", "capability", "tool"] },
           protocol: { type: "string" },
           host: { type: "string" },
           port: { type: "integer" },
           url: { type: "string", description: "Network URL; file paths are ignored" },
+          adapterId: { type: "string", description: "kind=capability: registration id protocol:name" },
+          pattern: { type: "string", description: "kind=tool: tool name or glob" },
           reason: { type: "string" },
         },
-        required: ["protocol"],
         additionalProperties: false,
       },
     },
     {
       name: "mcp_blacklist_remove",
-      description: "Remove a blacklist entry by id (protocol|host|port)",
+      description: "Remove a blacklist entry by id (protocol|host|port, cap|<adapterId>, or tool|<pattern>)",
       inputSchema: {
         type: "object",
         properties: { id: { type: "string" } },
@@ -472,14 +474,29 @@ async function list(
     description: t.description,
     layer: "management" as const,
   }));
-  let business = snapshot.tools.map((t) => ({
-    ...t,
-    layer: "business" as const,
-  }));
+  let business: Array<(typeof snapshot.tools)[number] & { layer: "business"; blocked?: boolean; blacklistId?: string }> =
+    snapshot.tools.map((t) => ({
+      ...t,
+      layer: "business" as const,
+    }));
   if (audience !== "console") {
     business = await ctx.security.hideAgentTools(business);
     const visible = new Set(business.map((t) => t.name));
     adapters = filterAdaptersForVisible(adapters, visible);
+  } else {
+    // Operator view keeps blocked tools but flags them (S3 tool / capability blacklist).
+    const flagged = [];
+    for (const t of business) {
+      const rec = ctx.registry.getRecord(t.adapterId);
+      const hit = await ctx.blacklist.matchSubject({
+        protocol: rec?.protocol,
+        config: rec?.config,
+        adapterId: t.adapterId,
+        toolName: t.name,
+      });
+      flagged.push(hit ? { ...t, blocked: true, blacklistId: hit.id } : t);
+    }
+    business = flagged;
   }
   const policy = { allowWriteDefault: false, cidrScanDefault: false };
   const counts = { management: management.length, business: business.length };
@@ -865,8 +882,13 @@ async function blacklistList(ctx: ManagementContext) {
   return {
     ok: true,
     entries,
-    match: "canonical protocol + normalized host + port (or protocol + normalized url)",
-    note: "Blocks mcp_add / discovery register / invoke. Does not uninstall already-mounted adapters; invoke still fails.",
+    match: "target: canonical protocol + normalized host + port (or protocol + normalized url); capability: adapterId; tool: name or glob",
+    counts: {
+      target: entries.filter((e) => (e.kind ?? "target") === "target").length,
+      capability: entries.filter((e) => e.kind === "capability").length,
+      tool: entries.filter((e) => e.kind === "tool").length,
+    },
+    note: "Blocks mcp_add / discovery register / invoke and hides matching tools from the Agent list. Does not uninstall already-mounted adapters; invoke still fails.",
   };
 }
 
