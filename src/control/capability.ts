@@ -86,7 +86,7 @@ export function assertAutoAllowed(decision: LifecycleDecision, auto: boolean, co
   if (auto && !decision.autoEligible) {
     throw new AdapterError(
       "E_UNSUPPORTED",
-      "auto-register is limited to Safe + readonly (allowWrite/allowShell/allowDesktop/allowReadSecrets not true) + non-blacklist",
+      "auto-register is limited to readonly (allowWrite/allowShell/allowDesktop/allowReadSecrets not true) + non-blacklist (Safe and Full)",
       { protocol: decision.proposal.protocol, details: { state: decision.state, reason: decision.reason } },
     );
   }

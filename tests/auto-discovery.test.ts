@@ -3,10 +3,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { AutoDiscovery, defaultDiscoveryMode, normalizeSettings } from "../src/control/auto-discovery.js";
+import { AutoDiscovery, defaultDiscoveryMode, normalizeSettings, dedupeSelfCandidates, candidateServiceKey } from "../src/control/auto-discovery.js";
 import { createEverything2McpServer } from "../src/control/server.js";
 import { handleConsoleRest } from "../src/control/rest.js";
-import { expandCidr, isNeverScan, isPrivateIp, parseCidr, parseScopeEntry, subnetsFromInterfaces } from "../src/discovery/netscope.js";
+import { expandCidr, isNeverScan, isPrivateIp, parseCidr, parseScopeEntry, subnetsFromInterfaces, hostPreferenceRank, isLoopbackHost, isTailscaleCgNat, collectSelfHosts } from "../src/discovery/netscope.js";
 import { looksLikeNetworkRange } from "../src/discovery/probe.js";
 import { mdnsMulticastBrowse } from "../src/discovery/dnssd.js";
 import type { ScanOptions } from "../src/discovery/scan.js";
@@ -83,6 +83,57 @@ describe("S4 netscope rules", () => {
     assert.equal(n.autoEnable, true, "autoEnable defaults on (blacklist is the opt-out)");
     assert.equal(normalizeSettings({}).timeoutMs, 1200);
   });
+
+  it("host preference: loopback beats tailscale beats other", () => {
+    assert.equal(isLoopbackHost("127.0.0.1"), true);
+    assert.equal(isTailscaleCgNat("100.103.191.7"), true);
+    assert.ok(hostPreferenceRank("127.0.0.1") < hostPreferenceRank("100.103.191.7"));
+    assert.ok(hostPreferenceRank("100.103.191.7") < hostPreferenceRank("192.168.1.1"));
+    assert.equal(candidateServiceKey("redis", 6379, "Redis (auth required)"), "redis|6379|redis (auth required)");
+  });
+
+  it("dedupeSelfCandidates prefers 127.0.0.1 over NIC aliases; keeps remotes", () => {
+    const self = collectSelfHosts({
+      lo: [{ family: "IPv4", address: "127.0.0.1", netmask: "255.0.0.0", internal: true }],
+      eth0: [{ family: "IPv4", address: "192.168.7.20", netmask: "255.255.255.0", internal: false }],
+      ts: [{ family: "IPv4", address: "100.103.191.7", netmask: "255.255.255.255", internal: false }],
+    });
+    const now = new Date().toISOString();
+    const mk = (host, protocol, port, title, status = "new") => ({
+      id: protocol + "|" + host + "|" + port,
+      protocol,
+      host,
+      url: protocol + "://" + host + ":" + port,
+      title,
+      confidence: 0.9,
+      suggestedName: protocol + "-" + host,
+      config: { url: protocol + "://" + host + ":" + port, allowWrite: false },
+      source: host === "127.0.0.1" ? "localhost" : "interface",
+      firstSeen: now,
+      lastSeen: now,
+      online: true,
+      missCount: 0,
+      status,
+      needsConfig: false,
+      missing: [],
+      credentials: [],
+    });
+    const input = [
+      mk("192.168.7.20", "redis", 6379, "Redis (auth required)"),
+      mk("100.103.191.7", "redis", 6379, "Redis (auth required)"),
+      mk("127.0.0.1", "redis", 6379, "Redis (auth required)"),
+      mk("192.168.7.20", "mongodb", 27017, "MongoDB"),
+      mk("10.0.0.50", "redis", 6379, "Redis (auth required)"),
+    ];
+    const out = dedupeSelfCandidates(input, self);
+    const redis = out.filter((c) => c.protocol === "redis");
+    assert.equal(redis.length, 2, "one self redis + one remote");
+    assert.equal(redis.find((c) => self.has(c.host) || c.host === "127.0.0.1")?.host, "127.0.0.1");
+    assert.ok(redis.some((c) => c.host === "10.0.0.50"));
+    assert.equal(out.filter((c) => c.protocol === "mongodb").length, 1);
+    assert.equal(out.find((c) => c.protocol === "mongodb")?.host, "192.168.7.20");
+  });
+
 });
 
 describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
@@ -235,6 +286,46 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
     assert.equal(run.autoEnabled.length, 1);
     assert.ok(run.autoEnabled[0]!.startsWith("s3:"));
     assert.equal(app.registry.list().adapters.length, 1);
+  });
+
+  it("autoEnable works in Full security mode for ready readonly candidates", async () => {
+    const table = {
+      "127.0.0.1": [
+        { protocol: "s3", url: "http://127.0.0.1:9000", hint: "minio", status: 1, config: { bucket: "b", endpoint: "memory://", accessKey: "a", secretKey: "s" } },
+      ],
+    };
+    const { d, app } = await setup(table);
+    await app.security.setMode("full", { actor: { kind: "console", tokenPresent: true } });
+    await d.updateSettings({ multicast: false, includeInterfaces: false, autoEnable: true });
+    const run = await d.run();
+    assert.equal(run.autoEnabled.length, 1, "errors=" + JSON.stringify(run.errors));
+    assert.ok(run.autoEnabled[0].startsWith("s3:"));
+  });
+
+  it("run dedupes redis on multiple self NIC IPs to loopback", async () => {
+    const table = {
+      "127.0.0.1": [
+        { protocol: "redis", url: "redis://127.0.0.1:6379", hint: "redis", status: 1, title: "Redis (auth required)", confidence: 0.9, config: { url: "redis://127.0.0.1:6379" } },
+      ],
+      "192.168.7.20": [
+        { protocol: "redis", url: "redis://192.168.7.20:6379", hint: "redis", status: 1, title: "Redis (auth required)", confidence: 0.9, config: { url: "redis://192.168.7.20:6379" } },
+      ],
+      "100.64.0.9": [
+        { protocol: "redis", url: "redis://100.64.0.9:6379", hint: "redis", status: 1, title: "Redis (auth required)", confidence: 0.9, config: { url: "redis://100.64.0.9:6379" } },
+      ],
+    };
+    const ifaces = {
+      lo: [{ family: "IPv4", address: "127.0.0.1", netmask: "255.0.0.0", internal: true }],
+      eth0: [{ family: "IPv4", address: "192.168.7.20", netmask: "255.255.255.0", internal: false }],
+      ts: [{ family: "IPv4", address: "100.64.0.9", netmask: "255.255.255.255", internal: false }],
+    };
+    const { d } = await setup(table, { networkInterfaces: () => ifaces });
+    await d.updateSettings({ multicast: false, includeInterfaces: true, includeLocalhost: true, autoEnable: false, hostCap: 16 });
+    await d.run();
+    const cands = await d.listCandidates();
+    const redis = cands.filter((c) => c.protocol === "redis");
+    assert.equal(redis.length, 1, JSON.stringify(redis.map((c) => c.id)));
+    assert.equal(redis[0].host, "127.0.0.1");
   });
 
   it("scheduler: auto mode schedules, stop() clears; server defaults to off under the test runner", async () => {

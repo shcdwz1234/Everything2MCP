@@ -53,8 +53,9 @@ export function isReadonlyConfig(config: JsonObject): boolean {
 }
 
 /**
- * Auto-register is Safe + readonly + not blacklisted only.
- * Suggest never bulk-registers. Full mode never auto-registers.
+ * Auto-register is readonly + not blacklisted (Safe and Full).
+ * Write/shell/desktop/secrets-gated configs always need confirm.
+ * Suggest never bulk-registers. needsConfig candidates are skipped by the caller.
  */
 export function evaluateLifecycle(input: {
   proposal: CapabilityProposal;
@@ -97,14 +98,14 @@ export function evaluateLifecycle(input: {
     };
   }
 
-  const autoEligible = mode === "safe" && readonly && !blacklisted;
+  const autoEligible = readonly && !blacklisted;
   if (autoEligible) {
     return {
       state: "auto_readonly",
       autoEligible: true,
       requiresConfirm: false,
       readonly,
-      reason: "Safe + readonly + not blacklisted; auto-register allowed if the caller opts in with auto:true.",
+      reason: `${mode === "full" ? "Full" : "Safe"} + readonly + not blacklisted; auto-register allowed if the caller opts in with auto:true.`,
       proposal,
     };
   }
@@ -114,9 +115,7 @@ export function evaluateLifecycle(input: {
     requiresConfirm: true,
     readonly,
     reason:
-      mode === "full"
-        ? "Full Control does not auto-register; operator confirm required."
-        : "Write/shell/desktop/secrets (or Partner write/desktop riskCeiling) is not auto-eligible; confirm or explicit register required.",
+      "Write/shell/desktop/secrets (or Partner write/desktop riskCeiling) is not auto-eligible; confirm or explicit register required.",
     proposal,
   };
 }

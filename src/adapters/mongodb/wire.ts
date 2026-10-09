@@ -96,7 +96,29 @@ export function decodeBson(buf: Buffer, offset = 0): { value: Record<string, unk
       const nested = decodeBson(buf, o);
       out[name] = type === 0x04 ? bsonArray(nested.value) : nested.value;
       o = nested.next;
+    } else if (type === 0x07) {
+      // ObjectId
+      out[name] = buf.subarray(o, o + 12).toString("hex");
+      o += 12;
+    } else if (type === 0x09) {
+      // UTC datetime
+      out[name] = Number(buf.readBigInt64LE(o));
+      o += 8;
+    } else if (type === 0x11) {
+      // Timestamp
+      out[name] = Number(buf.readBigInt64LE(o));
+      o += 8;
+    } else if (type === 0x05) {
+      // Binary
+      const n = buf.readInt32LE(o);
+      o += 5 + n; // length + subtype + data
+      out[name] = "<binary>";
+    } else if (type === 0x13) {
+      // Decimal128
+      out[name] = buf.subarray(o, o + 16).toString("hex");
+      o += 16;
     } else {
+      // Unknown type: stop this document (caller still has size for nested skip).
       break;
     }
   }
@@ -174,6 +196,16 @@ class MsgReader {
   }
 }
 
+function mongoCommandOk(doc: Record<string, unknown>): boolean {
+  const ok = doc.ok;
+  if (ok === 1 || ok === true) return true;
+  if (typeof ok === "number" && ok === 1) return true;
+  if (ok === 0 || ok === false) return false;
+  // Hello replies where ok was behind an unsupported BSON type still expose these.
+  if (doc.isWritablePrimary === true || doc.ismaster === true || doc.isMaster === true) return true;
+  return false;
+}
+
 export async function liveMongoWire(config: Record<string, unknown>): Promise<MongoHandle> {
   const raw = String(config.url ?? "");
   const u = raw.replace(/^mongodb:\/\//i, "");
@@ -193,7 +225,7 @@ export async function liveMongoWire(config: Record<string, unknown>): Promise<Mo
     socket.write(encodeOpMsg({ ...doc, $db: db }, id));
     const buf = await reader.readMessage(timeoutMs);
     const decoded = decodeOpMsg(buf);
-    if (decoded.doc.ok !== 1 && decoded.doc.ok !== true) {
+    if (!mongoCommandOk(decoded.doc)) {
       throw new AdapterError("E_PROTOCOL", `mongodb command failed: ${JSON.stringify(decoded.doc).slice(0, 180)}`, {
         protocol: "mongodb",
       });

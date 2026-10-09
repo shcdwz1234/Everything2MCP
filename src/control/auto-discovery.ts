@@ -12,6 +12,9 @@ import {
   isExcluded,
   isNeverScan,
   isPrivateIp,
+  isLoopbackHost,
+  hostPreferenceRank,
+  collectSelfHosts,
   NEVER_SCAN_DOC,
   parseCidr,
   parseScopeEntry,
@@ -35,7 +38,7 @@ import { callManagementTool, type ManagementContext } from "./tools.js";
  *   off    — nothing runs; run() is refused.
  * Every host goes through scanHost() one at a time (single-host API, SSRF +
  * metadata deny unchanged). Non-blacklisted ready candidates auto-enable when settings.autoEnable is on (default true)
- * via capability_register auto:true (Safe + readonly). allowWrite is always false.
+ * via capability_register auto:true (readonly; Safe and Full). allowWrite is always false.
  * Blacklist is the opt-out; needsConfig candidates still wait for credentials.
  */
 export type DiscoveryMode = "auto" | "manual" | "off";
@@ -298,6 +301,89 @@ export interface AutoDiscoveryDeps {
 interface PlannedHost {
   host: string;
   source: AutoCandidate["source"];
+}
+
+
+/** Service identity for NIC-alias dedupe: protocol + port (+ optional fingerprint). */
+export function candidateServiceKey(protocol: string, port: number, fingerprint?: string): string {
+  const fp = (fingerprint ?? "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
+  return fp ? `${protocol}|${port}|${fp}` : `${protocol}|${port}`;
+}
+
+function candidatePort(c: Pick<AutoCandidate, "protocol" | "url" | "config">): number {
+  const t = targetFromCandidate({ protocol: c.protocol, url: c.url, hint: "", status: 0, config: c.config });
+  return t && t.port > 0 ? t.port : 0;
+}
+
+/**
+ * Collapse the same service seen on multiple self NIC IPs into one candidate.
+ * Prefer 127.0.0.1 > Tailscale/CGNAT self > other self. Remotes (non-self) stay distinct.
+ * Enabled / blacklisted rows win over "new" when ranks tie or when replacing.
+ */
+export function dedupeSelfCandidates(
+  candidates: AutoCandidate[],
+  selfHosts: Set<string>,
+): AutoCandidate[] {
+  const isSelf = (host: string) => {
+    const h = host.trim().toLowerCase();
+    return selfHosts.has(h) || isLoopbackHost(h);
+  };
+  const remotes: AutoCandidate[] = [];
+  const best = new Map<string, AutoCandidate>();
+  const statusRank = (c: AutoCandidate) =>
+    c.status === "enabled" ? 0 : c.status === "blacklisted" ? 1 : c.status === "dismissed" ? 2 : 3;
+
+  for (const c of candidates) {
+    if (!isSelf(c.host)) {
+      remotes.push(c);
+      continue;
+    }
+    const port = candidatePort(c);
+    if (port <= 0) {
+      remotes.push(c);
+      continue;
+    }
+    const key = candidateServiceKey(c.protocol, port, c.title);
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, c);
+      continue;
+    }
+    const rankNew = hostPreferenceRank(c.host);
+    const rankOld = hostPreferenceRank(prev.host);
+    const statusNew = statusRank(c);
+    const statusOld = statusRank(prev);
+    let takeNew = false;
+    if (statusNew < statusOld) takeNew = true;
+    else if (statusNew === statusOld && rankNew < rankOld) takeNew = true;
+    else if (statusNew === statusOld && rankNew === rankOld && c.confidence > prev.confidence) takeNew = true;
+
+    if (takeNew) {
+      const merged: AutoCandidate = {
+        ...c,
+        status: statusRank(c) <= statusRank(prev) ? c.status : prev.status,
+        registeredId: c.registeredId ?? prev.registeredId,
+        blacklistId: c.blacklistId ?? prev.blacklistId,
+        firstSeen: prev.firstSeen < c.firstSeen ? prev.firstSeen : c.firstSeen,
+        lastError: c.lastError ?? prev.lastError,
+      };
+      // Preserve enabled/blacklisted from the survivor with better status.
+      if (statusOld < statusNew) {
+        merged.status = prev.status;
+        merged.registeredId = prev.registeredId ?? merged.registeredId;
+        merged.blacklistId = prev.blacklistId ?? merged.blacklistId;
+      }
+      best.set(key, merged);
+    } else {
+      // Keep prev host, but refresh online / lastSeen from newer sighting if useful.
+      if (c.online && (!prev.online || c.lastSeen > prev.lastSeen)) {
+        prev.lastSeen = c.lastSeen;
+        prev.online = true;
+        prev.missCount = 0;
+      }
+    }
+  }
+  return [...best.values(), ...remotes];
 }
 
 export class AutoDiscovery {
@@ -723,6 +809,13 @@ export class AutoDiscovery {
         });
       }
     }
+    {
+      const selfHosts = collectSelfHosts(this.deps.networkInterfaces());
+      this.candidates = dedupeSelfCandidates(this.candidates, selfHosts);
+      // Do not add surviving candidates to seenIds — that set must stay
+      // "found this run" only so miss/offline tracking still works.
+    }
+
     for (const c of this.candidates) {
       if (seenIds.has(c.id)) continue;
       if (!scannedHosts.has(c.host.toLowerCase())) continue;
@@ -866,7 +959,7 @@ export class AutoDiscovery {
       notes: [
         "每台主机单独走 scanHost（单主机 API、SSRF / 元数据拒绝不变）。",
         "候选默认 allowWrite=false，黑名单命中的不会出现在可启用列表。",
-        "autoEnable 仅对 Safe + 只读 + 非黑名单 + 无需凭据 的候选生效；默认开启（黑名单为唯一退出）。",
+        "autoEnable 对只读 + 非黑名单 + 无需凭据 的候选生效（Safe/Full 均可）；默认开启（黑名单为唯一退出）。",
       ],
     };
   }

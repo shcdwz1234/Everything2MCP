@@ -65,6 +65,42 @@ export function isLinkLocal(ip: string): boolean {
   return ip.toLowerCase().startsWith("fe8") || ip.toLowerCase().startsWith("fe9") || ip.toLowerCase().startsWith("fea") || ip.toLowerCase().startsWith("feb");
 }
 
+export function isLoopbackHost(ip: string): boolean {
+  const h = ip.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h === "::1") return true;
+  const v4 = parseIpv4Literal(h);
+  if (v4 !== undefined) return inRange(v4 >>> 0, "127.0.0.0", 8);
+  return false;
+}
+
+/** RFC 6598 CGNAT / Tailscale-style overlay (100.64.0.0/10). */
+export function isTailscaleCgNat(ip: string): boolean {
+  const v4 = parseIpv4Literal(ip.trim());
+  if (v4 === undefined) return false;
+  return inRange(v4 >>> 0, "100.64.0.0", 10);
+}
+
+/**
+ * Prefer loopback > Tailscale/CGNAT self > other when deduping the same
+ * protocol+port service discovered on multiple NIC addresses.
+ * Lower rank wins.
+ */
+export function hostPreferenceRank(host: string): number {
+  if (isLoopbackHost(host)) return 0;
+  if (isTailscaleCgNat(host)) return 1;
+  return 2;
+}
+
+export function collectSelfHosts(ifaces: Record<string, InterfaceAddr[] | undefined>): Set<string> {
+  const self = new Set<string>(["127.0.0.1", "localhost", "::1"]);
+  for (const addrs of Object.values(ifaces)) {
+    for (const a of addrs ?? []) {
+      if (typeof a.address === "string" && a.address.trim()) self.add(a.address.trim().toLowerCase());
+    }
+  }
+  return self;
+}
+
 export function isPrivateIp(ip: string): boolean {
   const v4 = parseIpv4Literal(ip);
   if (v4 !== undefined) return PRIVATE_V4.some(([net, bits]) => inRange(v4 >>> 0, net, bits));

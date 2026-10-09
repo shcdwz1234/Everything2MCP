@@ -20,7 +20,7 @@ describe("Phase V1 capability lifecycle / hot-add", { timeout: 25_000 }, () => {
     for (const fn of [...cleanups].reverse()) await fn().catch(() => undefined);
   });
 
-  it("evaluateLifecycle: auto only for Safe+readonly; Full and writes need confirm", () => {
+  it("evaluateLifecycle: auto for readonly in Safe and Full; writes need confirm", () => {
     const proposal = { protocol: "os_info", name: "local", config: { allowWrite: false } };
     const auto = evaluateLifecycle({
       proposal,
@@ -49,7 +49,8 @@ describe("Phase V1 capability lifecycle / hot-add", { timeout: 25_000 }, () => {
       alreadyLive: false,
       validated: true,
     });
-    assert.equal(full.autoEligible, false);
+    assert.equal(full.autoEligible, true);
+    assert.equal(full.state, "auto_readonly");
 
     const secrets = evaluateLifecycle({
       proposal: { protocol: "vault", name: "v", config: { simulator: true, allowReadSecrets: true } },
