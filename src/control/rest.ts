@@ -723,16 +723,44 @@ function decorateAdapter(
   // 地址 column: host:port only (never the raw URL, which may carry credentials).
   const tgt = record ? targetFromConfig(record.protocol, record.config) : undefined;
   const address = tgt?.host ? (tgt.port ? `${tgt.host}:${tgt.port}` : tgt.host) : undefined;
+  const cfg = record?.config ?? {};
+  const opsRaw = Array.isArray(cfg.operations) ? cfg.operations : [];
+  const operations =
+    ingress === "partner"
+      ? opsRaw
+          .filter((op): op is Record<string, unknown> => Boolean(op) && typeof op === "object" && !Array.isArray(op))
+          .map((op) => {
+            const name = typeof op.name === "string" ? op.name : "";
+            const snapName = typeof (snap as { name?: unknown }).name === "string" ? (snap as { name: string }).name : id;
+            const cap = typeof cfg.capability_id === "string" ? cfg.capability_id : snapName;
+            return {
+              name,
+              description: typeof op.description === "string" ? op.description : name,
+              risk: op.risk === "write" || op.risk === "desktop" ? op.risk : "readonly",
+              tool: name ? `partner.${cap}.${name}` : undefined,
+            };
+          })
+          .filter((op) => op.name)
+      : undefined;
+  const invokeUrl =
+    typeof cfg.invokeUrl === "string"
+      ? cfg.invokeUrl
+      : cfg.invoke && typeof cfg.invoke === "object" && !Array.isArray(cfg.invoke) && typeof (cfg.invoke as JsonObject).url === "string"
+        ? String((cfg.invoke as JsonObject).url)
+        : undefined;
   return {
     ...snap,
-    config: record?.config ?? {},
+    config: cfg,
     createdAt: record?.createdAt,
     updatedAt: record?.updatedAt,
     allowWrite: record?.config.allowWrite === true,
     disabled: record?.disabled === true,
     ingress,
     source,
-    address,
+    address: address ?? (invokeUrl ? invokeUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "") : undefined),
+    displayName: typeof cfg.display_name === "string" ? cfg.display_name : undefined,
+    invokeUrl,
+    operations,
     blacklisted,
     blacklistKind,
     blacklistId: blacklistRef,

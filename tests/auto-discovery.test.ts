@@ -80,6 +80,8 @@ describe("S4 netscope rules", () => {
     assert.equal(n.intervalMinutes, 5);
     assert.equal(n.hostCap, 1024);
     assert.equal(n.concurrency, 1);
+    assert.equal(n.autoEnable, true, "autoEnable defaults on (blacklist is the opt-out)");
+    assert.equal(normalizeSettings({}).timeoutMs, 1200);
   });
 });
 
@@ -126,7 +128,7 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
     assert.equal(hosts.includes("169.254.169.254"), false, "metadata never");
     assert.ok(hosts.includes("10.9.0.1") && hosts.includes("10.9.0.2"));
     assert.equal(hosts.some((h) => /^192\.168\.7\.(\d|1[0-5])$/.test(h)), false, "exclusion honoured");
-    assert.equal(hosts.includes("192.168.7.20"), false, "own address skipped");
+    assert.equal(hosts.includes("192.168.7.20"), true, "own address included (interface-bound / /32 overlays)");
     assert.equal(hosts.length, 40);
     assert.equal(plan.truncated, true);
     assert.ok(plan.errors.some((e) => e.includes("evil.example")));
@@ -338,6 +340,18 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
     } finally {
       await again.close();
       await rm(t.dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("S4 follow-up: scan completeness + partner interfaces", () => {
+  it("listLocalListenTcpPorts returns numbers on this platform", async () => {
+    const { listLocalListenTcpPorts } = await import("../src/discovery/local-ports.js");
+    const ports = await listLocalListenTcpPorts({ max: 10 });
+    assert.ok(Array.isArray(ports));
+    for (const p of ports) {
+      assert.equal(typeof p, "number");
+      assert.ok(p > 0 && p < 49152);
     }
   });
 });

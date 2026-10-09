@@ -75,3 +75,8 @@ Under `node:test` the home directory is not scanned.
 ## Personal WeChat / QQ
 
 Honest non-claim: personal WeChat private chat is **not** Partner-compatible in this release. No payment protocol. No personal QQ protocol. Desktop UI automation is P4 deferred and `allowDesktop`-gated.
+
+
+## Console: interfaces (operations)
+
+GET /api/partner/v1/connections and the Partner page list each connection's **operations** (接口) with tool names partner.{capability_id}.{op}. Operators can blacklist a single operation via tool-kind blacklist without unregistering the whole partner. display_name, invokeUrl, and ersion are shown alongside the capability id.

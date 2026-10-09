@@ -411,39 +411,77 @@ async function renderCapabilities(): Promise<string> {
 }
 
 async function renderPartner(): Promise<string> {
-  const [listed, token] = await Promise.all([rest.partnerConnections(), rest.partnerToken()]);
+  const [listed, token, bl] = await Promise.all([rest.partnerConnections(), rest.partnerToken(), rest.blacklist()]);
   const connections = ((listed as { connections?: Array<Record<string, unknown>> }).connections ?? []) as Array<
     Record<string, unknown>
   >;
-  const rows = connections
-    .map(
-      (a) => `<tr>
-        <td>${statusDot(a.status === "live", a.status !== "live")}</td>
-        <td>${esc(a.id)}</td>
-        <td>${ingressBadge(a.ingress ?? "partner")}</td>
-        <td>${esc(a.toolCount ?? 0)}</td>
-        <td><button class="btn" type="button" data-hot-del="${esc(a.id)}">确认卸载</button></td>
-      </tr>`,
-    )
+  const blocked = new Map<string, string>();
+  for (const e of (((bl as J).entries ?? []) as J[])) {
+    if (e.kind === "tool" && typeof e.pattern === "string") blocked.set(e.pattern, String(e.id));
+    if (e.kind === "tool" && typeof e.id === "string" && String(e.id).startsWith("tool|")) {
+      blocked.set(String(e.id).slice(5), String(e.id));
+    }
+  }
+  const cards = connections
+    .map((a) => {
+      const ops = (Array.isArray(a.operations) ? a.operations : []) as J[];
+      const opRows = ops
+        .map((op) => {
+          const tool = String(op.tool ?? "");
+          const hit = tool && blocked.has(tool) ? blocked.get(tool) : undefined;
+          return `<div class="tool-row ${hit ? "blocked" : ""}">
+            <div>
+              <div class="mono">${esc(op.name)}</div>
+              <div class="hint">${esc(op.description ?? "")}${tool ? ` · <span class="mono">${esc(tool)}</span>` : ""}</div>
+            </div>
+            <div class="row-actions">
+              ${op.risk === "write" || op.risk === "desktop" ? tag(String(op.risk), "warn") : tag("只读")}
+              ${
+                hit
+                  ? `${tag("已拉黑", "bad")} <button class="btn sm" type="button" data-unblock="${esc(hit)}">解除</button>`
+                  : tool
+                    ? `<button class="btn sm danger" type="button" data-tool-bl="${esc(tool)}">拉黑此接口</button>`
+                    : ""
+              }
+            </div>
+          </div>`;
+        })
+        .join("");
+      return `<div class="card partner-card" data-partner="${esc(a.id)}">
+        <div class="row-actions" style="justify-content:space-between;align-items:flex-start">
+          <div>
+            <strong>${esc(a.displayName ?? a.name ?? a.id)}</strong>
+            ${ingressBadge(a.ingress ?? "partner")}
+            ${a.version ? tag(`v${a.version}`) : ""}
+            <div class="hint mono">${esc(a.id)}</div>
+            ${a.invokeUrl ? `<div class="hint">回调 <span class="mono">${esc(a.invokeUrl)}</span></div>` : `<div class="hint">无 invoke URL</div>`}
+          </div>
+          <div class="row-actions">
+            <a class="btn sm" href="${href(`/caps?tab=current`)}">在当前能力中查看</a>
+            <button class="btn sm danger" type="button" data-hot-del="${esc(a.id)}">确认卸载</button>
+          </div>
+        </div>
+        <h4>接口 <span class="hint">${ops.length}</span></h4>
+        <p class="hint">每个 Partner operation 对应一个 MCP tool；可单独拉黑（不影响同应用其它接口）。</p>
+        ${opRows || `<div class="empty">没有接口</div>`}
+      </div>`;
+    })
     .join("");
   return `
     <div class="page-head">
       <div>
         <h2>Partner 连接</h2>
-        <p>南向优先 Partner 协议。应用<strong>不实现 MCP</strong>。Agent 只配置一个 Everything2MCP。mcp_bridge 是兜底，不是主路径。</p>
+        <p>南向优先 Partner 协议。应用<strong>不实现 MCP</strong>。Agent 只配置一个 Everything2MCP。下方列出每个伙伴的<strong>接口</strong>（operations），可单独拉黑。</p>
       </div>
     </div>
     <div class="card">
       <h3>本地 Partner token</h3>
-      <p class="hint">写在 <code>dataDir/partner-token</code>。和 HTTP_TOKEN 分开。循环回环 + Partner token 才能 register/heartbeat/unregister。</p>
+      <p class="hint">写在 <code>dataDir/partner-token</code>。和 HTTP_TOKEN 分开。伙伴应用（如 OmniSearchTools）需设置 <code>E2M_BASE_URL</code> + <code>E2M_PARTNER_TOKEN</code> 才会自动注册到此。</p>
       <pre>${esc((token as { token?: string }).token ?? "")}</pre>
       <button class="btn" type="button" id="rotate-partner-token">轮换 token（需确认）</button>
     </div>
-    <div class="table-wrap" style="margin:16px 0">
-      <table>
-        <thead><tr><th></th><th>ID</th><th>ingress</th><th>Tools</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="empty">还没有 Partner。把清单丢进 ~/.everything2mcp/drops 或跑 examples/partner-demo-chat。</td></tr>`}</tbody>
-      </table>
+    <div style="margin:16px 0;display:grid;gap:12px">
+      ${cards || `<div class="card empty">还没有 Partner。把清单丢进 drops，或启动 OmniSearchTools（配置 E2M_PARTNER_TOKEN 后会自动连接）。</div>`}
     </div>
     <div class="row-actions">
       <button class="btn primary" type="button" id="compat-scan-btn">Compat 扫描</button>
@@ -451,7 +489,6 @@ async function renderPartner(): Promise<string> {
     <div id="compat-out"></div>
   `;
 }
-
 async function renderImport(): Promise<string> {
   return `
     <div class="page-head">
@@ -692,7 +729,37 @@ function bindPage(page: Page): void {
     });
   });
 
-  document.getElementById("rotate-partner-token")?.addEventListener("click", async () => {
+  
+  if (page.name === "partner") {
+    document.querySelectorAll("button[data-tool-bl]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = (btn as HTMLElement).dataset.toolBl;
+        if (!name) return;
+        if (!window.confirm(`拉黑接口工具 ${name}？Agent 将看不到也调不了它；同 Partner 其它接口不受影响。`)) return;
+        try {
+          await rest.addBlacklist({ kind: "tool", pattern: name, reason: "console partner interface" });
+          showToast("ok", `已拉黑 ${name}`);
+          void render();
+        } catch (err) {
+          showToast("err", err instanceof Error ? err.message : String(err));
+        }
+      });
+    });
+    document.querySelectorAll("button[data-unblock]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.unblock;
+        if (!id) return;
+        try {
+          await rest.removeBlacklist(id);
+          showToast("ok", `已解除 ${id}`);
+          void render();
+        } catch (err) {
+          showToast("err", err instanceof Error ? err.message : String(err));
+        }
+      });
+    });
+  }
+document.getElementById("rotate-partner-token")?.addEventListener("click", async () => {
     if (!window.confirm("轮换本地 Partner token？已连接的 Partner 应用需要改用新 token。")) return;
     try {
       await rest.rotatePartnerToken();
@@ -1201,7 +1268,7 @@ async function renderCurrentTab(): Promise<string> {
       const id = String(a.id);
       return `<tr class="cap-row" data-row="${esc(id)}">
         <td>${statusDot(st.kind === "ok", st.kind === "bad")}</td>
-        <td><div class="cap-name">${esc(a.name)}</div><div class="hint mono">${esc(id)}</div></td>
+        <td><div class="cap-name">${esc(a.displayName ?? a.name)}</div><div class="hint mono">${esc(id)}</div></td>
         <td>${protoBadge(String(a.protocol))} ${a.ingress && a.ingress !== "native" ? ingressBadge(a.ingress) : ""}</td>
         <td>${tag(SOURCE_COL[String(a.source)] ?? "手动")}${a.address ? `<div class="hint mono">${esc(a.address)}</div>` : ""}</td>
         <td>${esc(a.toolCount ?? 0)}</td>
@@ -1449,6 +1516,7 @@ async function openDrawer(id: string): Promise<void> {
         <a class="btn sm" href="${href(`/add?edit=${encodeURIComponent(id)}`)}">配置</a>
         <button class="btn sm" type="button" data-ping="${esc(id)}">测试</button>
       </div>
+      ${Array.isArray(a.operations) && a.operations.length ? `<h4>接口 <span class="hint">${a.operations.length}</span></h4><p class="hint">${a.invokeUrl ? `回调 ${esc(String(a.invokeUrl))} · ` : ""}每个 operation 对应一个 tool，可单独屏蔽。</p>` : ""}
       <h4>Tools <span class="hint">${list.length}</span></h4>
       ${rows || `<div class="empty">${a.status === "disabled" ? "已停用，没有暴露 tools。" : "没有 tools。"}</div>`}
       <details><summary class="hint">配置（已脱敏）</summary><pre>${esc(pretty(a.config ?? {}))}</pre></details>`;
@@ -1940,7 +2008,7 @@ async function renderSettingsPage(): Promise<string> {
         <label class="check"><input type="checkbox" name="includeLocalhost" ${d.includeLocalhost ? "checked" : ""}/> 本机 127.0.0.1</label>
         <label class="check"><input type="checkbox" name="includeInterfaces" ${d.includeInterfaces ? "checked" : ""}/> 网卡所在私网（每块网卡最多 /24）</label>
         <label class="check"><input type="checkbox" name="multicast" ${d.multicast ? "checked" : ""}/> mDNS / SSDP 组播应答者</label>
-        <label class="check"><input type="checkbox" name="autoEnable" ${d.autoEnable ? "checked" : ""}/> 自动启用无需凭据的只读候选（默认关）</label>
+        <label class="check"><input type="checkbox" name="autoEnable" ${d.autoEnable ? "checked" : ""}/> 自动启用新发现（非黑名单、无需凭据；默认开）</label>
       </div>
       <div class="form-grid two">
         <div class="field"><label>手动范围（每行一个：主机 / 域名 / CIDR，最大 /16）</label><textarea name="scopes" class="short" placeholder="10.20.0.0/24&#10;nas.lan">${esc((d.scopes ?? []).join("\n"))}</textarea></div>

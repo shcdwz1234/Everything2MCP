@@ -102,8 +102,15 @@ describe("Phase X Partner lifecycle", { timeout: 25_000 }, () => {
     const tools = app.registry.list().tools.map((t) => t.name);
     assert.ok(tools.includes("partner.demo_chat.list_chats"));
     assert.ok(tools.includes("partner.demo_chat.send_message"));
-    const listed = (await callManagementTool("partner_list", {}, ctx)) as { connections: Array<{ id: string }> };
-    assert.ok(listed.connections.some((c) => c.id === "partner:demo_chat"));
+    const listed = (await callManagementTool("partner_list", {}, ctx)) as {
+      connections: Array<{ id: string; displayName?: string; invokeUrl?: string; operations?: Array<{ name: string; tool?: string }> }>;
+    };
+    const conn = listed.connections.find((c) => c.id === "partner:demo_chat");
+    assert.ok(conn, "partner connection visible");
+    assert.equal(conn!.displayName, "Demo Chat");
+    assert.ok(conn!.invokeUrl && /\/invoke$/.test(conn!.invokeUrl));
+    assert.ok(Array.isArray(conn!.operations) && conn!.operations!.length >= 1);
+    assert.ok(conn!.operations!.some((op) => op.tool === "partner.demo_chat.list_chats"));
 
     const chats = (await app.registry.invoke("partner.demo_chat.list_chats", {})) as { chats: unknown[] };
     assert.ok(Array.isArray(chats.chats) && chats.chats.length >= 1);

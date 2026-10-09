@@ -955,14 +955,46 @@ async function capabilityRegister(ctx: ManagementContext, args: Record<string, u
 
 async function partnerList(ctx: ManagementContext) {
   const snapshot = ctx.registry.list();
-  const connections = snapshot.adapters.filter(
-    (a) => inferIngress(a.protocol, ctx.registry.getRecord(a.id)?.config ?? {}) === "partner",
-  );
+  const connections = [];
+  for (const a of snapshot.adapters) {
+    const rec = ctx.registry.getRecord(a.id);
+    const cfg = (rec?.config ?? {}) as Record<string, unknown>;
+    if (inferIngress(a.protocol, cfg as JsonObject) !== "partner") continue;
+    const capabilityId = typeof cfg.capability_id === "string" ? cfg.capability_id : a.name;
+    const opsRaw = Array.isArray(cfg.operations) ? cfg.operations : [];
+    const operations = opsRaw
+      .filter((op): op is Record<string, unknown> => Boolean(op) && typeof op === "object" && !Array.isArray(op))
+      .map((op) => {
+        const name = typeof op.name === "string" ? op.name : "";
+        return {
+          name,
+          description: typeof op.description === "string" ? op.description : name,
+          risk: op.risk === "write" || op.risk === "desktop" ? op.risk : "readonly",
+          tool: name ? `partner.${capabilityId}.${name}` : undefined,
+        };
+      })
+      .filter((op) => op.name);
+    const invoke = cfg.invoke && typeof cfg.invoke === "object" && !Array.isArray(cfg.invoke) ? (cfg.invoke as Record<string, unknown>) : {};
+    const invokeUrl =
+      (typeof cfg.invokeUrl === "string" && cfg.invokeUrl) ||
+      (typeof invoke.url === "string" && invoke.url) ||
+      undefined;
+    connections.push({
+      ...a,
+      displayName: typeof cfg.display_name === "string" ? cfg.display_name : a.name,
+      version: typeof cfg.version === "string" ? cfg.version : undefined,
+      capabilityId,
+      invokeUrl,
+      operations,
+      heartbeatTtlMs: typeof cfg.heartbeatTtlMs === "number" ? cfg.heartbeatTtlMs : undefined,
+      riskCeiling: typeof cfg.riskCeiling === "string" ? cfg.riskCeiling : undefined,
+    });
+  }
   return {
     ok: true,
     connections,
     ingressPriority: ["partner", "native", "mcp_bridge"],
-    note: "Southbound is Partner protocol first, then native OpenAPI adapters, then mcp_bridge 兜底. Northbound stays MCP.",
+    note: "Southbound is Partner protocol first, then native OpenAPI adapters, then mcp_bridge fallback. Northbound stays MCP. Interface = operations; blacklist individual tools from the console.",
   };
 }
 

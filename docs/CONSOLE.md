@@ -46,7 +46,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 
 ### 设置 `#/settings`
 
-- **自动发现**：模式（自动 / 手动 / 关闭）、间隔、单次主机上限、并发、单端口超时、本机 / 网卡私网 / mDNS·SSDP 组播开关、手动范围与排除、是否允许公网范围、自动启用（默认关）、探测协议列表；最近运行历史。规则见 [DISCOVERY.md](DISCOVERY.md#自动发现auto-discovery)。
+- **自动发现**：模式（自动 / 手动 / 关闭）、间隔、单次主机上限、并发、单端口超时、本机 / 网卡私网 / mDNS·SSDP 组播开关、手动范围与排除、是否允许公网范围、自动启用（默认开；黑名单为退出）、探测协议列表；最近运行历史。规则见 [DISCOVERY.md](DISCOVERY.md#自动发现auto-discovery)。
 - **安全模式**：Safe / Full 热切换（二次确认）。
 - 版本、数据目录、传输、token 是否配置；原始设置 JSON。
 

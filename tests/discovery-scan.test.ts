@@ -80,6 +80,30 @@ describe("discovery_scan_host", () => {
     assert.equal(candidates[0]?.protocol, "redis");
   });
 
+  it("fingerprints Redis NOAUTH / auth-required as a discovery hit", async () => {
+    const server = createNetServer((socket) => {
+      socket.on("data", () => {
+        socket.end("-NOAUTH Authentication required.\r\n");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const candidates = await scanHost({
+        host: "127.0.0.1",
+        port,
+        onlyGivenPort: true,
+        protocols: ["redis"],
+        timeoutMs: 1500,
+      });
+      assert.equal(candidates.length, 1);
+      assert.equal(candidates[0]?.protocol, "redis");
+      assert.match(String(candidates[0]?.title ?? ""), /auth/i);
+      assert.match(String(candidates[0]?.detail ?? ""), /NOAUTH|auth/i);
+    } finally {
+      server.close();
+    }
+  });
   it("fingerprints PostgreSQL SSLRequest and MySQL greeting", async () => {
     const pgServer = createNetServer((socket) => {
       socket.on("data", () => socket.end("N"));

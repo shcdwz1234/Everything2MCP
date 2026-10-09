@@ -79,16 +79,18 @@ export async function fingerprintRedis(
   const buf = await tcpExchange(host, port, Buffer.from("*1\r\n$4\r\nPING\r\n"), timeoutMs);
   if (!buf) return undefined;
   const text = buf.toString("utf8");
-  if (!/\+PONG|\$4\r\nPONG/i.test(text)) return undefined;
+  // +PONG = open; -NOAUTH / auth-required = Redis that needs a password (still a hit).
+  const open = /\+PONG|\$4\r\nPONG/i.test(text);
+  const needsAuth = /^-NOAUTH|NOAUTH|auth(entication)?\s+required|invalid password|wrong pass/i.test(text);
+  if (!open && !needsAuth) return undefined;
   return candidate("redis", `redis://${host}:${port}`, "mcp_add protocol=redis config.url=<url>", {
     status: 1,
-    title: "Redis PING",
-    confidence: 0.92,
-    detail: text.slice(0, 80),
+    title: needsAuth ? "Redis (auth required)" : "Redis PING",
+    confidence: needsAuth ? 0.88 : 0.92,
+    detail: text.slice(0, 120),
     config: { url: `redis://${host}:${port}` },
   });
 }
-
 export function mqttConnectPacket(clientId = "e2mcp"): Buffer {
   const proto = Buffer.from([0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x3c]);
   const id = Buffer.from(clientId, "utf8");

@@ -66,7 +66,7 @@ import { ssdpUnicastSearch } from "./ssdp.js";
 import { mdnsUnicastQuery } from "./dnssd.js";
 
 export const WELL_KNOWN_PORTS = {
-  http: [80, 8080, 8000],
+  http: [80, 8080, 8000, 3000, 5000, 5173, 8001, 8081, 8090, 8888, 9000, 9090, 9200, 11434],
   https: [443, 8443],
   grpc: [50051],
   redis: [6379],
@@ -132,6 +132,8 @@ export interface ScanOptions {
   timeoutMs: number;
   /** When true, only the given port is probed (HTTP + whatever protocol matches that port). */
   onlyGivenPort?: boolean;
+  /** Extra HTTP(S) ports to probe (e.g. local listening ports on localhost). Deduped with well-known. */
+  extraHttpPorts?: number[];
   transports?: ScanTransports;
 }
 
@@ -629,10 +631,20 @@ function httpPortsFor(opts: ScanOptions): Array<{ port: number; https: boolean }
     return [{ port: opts.port, https }];
   }
   if (opts.https) return WELL_KNOWN_PORTS.https.map((port) => ({ port, https: true }));
-  return [
-    ...WELL_KNOWN_PORTS.http.map((port) => ({ port, https: false })),
-    { port: 443, https: true },
-  ];
+  const extras = (opts.extraHttpPorts ?? [])
+    .map((p) => Math.floor(Number(p)))
+    .filter((p) => Number.isFinite(p) && p > 0 && p <= 65535);
+  const seen = new Set<number>();
+  const out: Array<{ port: number; https: boolean }> = [];
+  const push = (port: number, https: boolean) => {
+    if (seen.has(port)) return;
+    seen.add(port);
+    out.push({ port, https });
+  };
+  for (const port of WELL_KNOWN_PORTS.http) push(port, false);
+  for (const port of WELL_KNOWN_PORTS.https) push(port, true);
+  for (const port of extras) push(port, port === 443 || port === 8443);
+  return out;
 }
 
 function formatHost(host: string): string {

@@ -20,6 +20,7 @@ import {
   type InterfaceAddr,
 } from "../discovery/netscope.js";
 import { mdnsMulticastQuery, ssdpMulticastSearch, type MulticastHit } from "../discovery/multicast.js";
+import { listLocalListenTcpPorts } from "../discovery/local-ports.js";
 import { AdapterError, errorPayload } from "../runtime/errors.js";
 import { log } from "../runtime/log.js";
 import { recordSecurityEvent } from "../runtime/metrics.js";
@@ -33,9 +34,9 @@ import { callManagementTool, type ManagementContext } from "./tools.js";
  *   manual — only "立即扫描" / POST /api/discovery/run; same scope rules.
  *   off    — nothing runs; run() is refused.
  * Every host goes through scanHost() one at a time (single-host API, SSRF +
- * metadata deny unchanged). Candidates are never registered automatically
- * unless settings.autoEnable is on, and then only through capability_register
- * auto:true (Safe + readonly + non-blacklist). allowWrite is always false.
+ * metadata deny unchanged). Non-blacklisted ready candidates auto-enable when settings.autoEnable is on (default true)
+ * via capability_register auto:true (Safe + readonly). allowWrite is always false.
+ * Blacklist is the opt-out; needsConfig candidates still wait for credentials.
  */
 export type DiscoveryMode = "auto" | "manual" | "off";
 
@@ -118,6 +119,7 @@ interface DiscoveryFile {
 
 export const DEFAULT_AUTO_PROTOCOLS = [
   "openapi",
+  "soap",
   "graphql",
   "grpc",
   "redis",
@@ -129,6 +131,7 @@ export const DEFAULT_AUTO_PROTOCOLS = [
   "mongodb",
   "elasticsearch",
   "clickhouse",
+  "neo4j",
   "qdrant",
   "s3",
   "prometheus",
@@ -141,6 +144,12 @@ export const DEFAULT_AUTO_PROTOCOLS = [
   "couchdb",
   "influx",
   "rabbitmq",
+  "docker",
+  "vault",
+  "webdav",
+  "memcached",
+  "solr",
+  "websocket",
 ];
 
 const MAX_RUNS = 50;
@@ -203,10 +212,10 @@ export function defaultSettings(env: NodeJS.ProcessEnv = process.env, discoveryE
     scopes: splitList(env.EVERYTHING2MCP_DISCOVERY_SCOPES),
     exclude: splitList(env.EVERYTHING2MCP_DISCOVERY_EXCLUDE),
     allowPublic: false,
-    autoEnable: false,
-    hostCap: 256,
+    autoEnable: true,
+    hostCap: 512,
     concurrency: 16,
-    timeoutMs: 800,
+    timeoutMs: 1200,
     protocols: [...DEFAULT_AUTO_PROTOCOLS],
   });
 }
@@ -234,10 +243,10 @@ export function normalizeSettings(input: Partial<DiscoverySettings>, base?: Disc
     scopes: [],
     exclude: [],
     allowPublic: false,
-    autoEnable: false,
-    hostCap: 256,
+    autoEnable: true,
+    hostCap: 512,
     concurrency: 16,
-    timeoutMs: 800,
+    timeoutMs: 1200,
     protocols: [...DEFAULT_AUTO_PROTOCOLS],
   };
   const mode = input.mode === "auto" || input.mode === "manual" || input.mode === "off" ? input.mode : b.mode;
@@ -262,9 +271,9 @@ export function normalizeSettings(input: Partial<DiscoverySettings>, base?: Disc
     exclude: [...new Set(exclude)],
     allowPublic,
     autoEnable: typeof input.autoEnable === "boolean" ? input.autoEnable : b.autoEnable,
-    hostCap: clamp(input.hostCap ?? b.hostCap, 1, 1024, 256),
+    hostCap: clamp(input.hostCap ?? b.hostCap, 1, 1024, 512),
     concurrency: clamp(input.concurrency ?? b.concurrency, 1, 64, 16),
-    timeoutMs: clamp(input.timeoutMs ?? b.timeoutMs, 100, 10_000, 800),
+    timeoutMs: clamp(input.timeoutMs ?? b.timeoutMs, 100, 10_000, 1200),
     protocols: protocols.length ? [...new Set(protocols)] : [...DEFAULT_AUTO_PROTOCOLS],
   };
 }
@@ -576,10 +585,14 @@ export class AutoDiscovery {
       } catch (err) {
         errors.push(`interfaces: ${String(err)}`);
       }
+      // Always include each NIC's own address first (covers /32 overlays like Tailscale
+      // and services bound to the interface IP). Localhost alone misses those.
       for (const sn of subnets) {
-        const { hosts: list } = expandCidr(sn.cidr, 256);
+        if (!push(sn.self, "interface")) break;
+      }
+      for (const sn of subnets) {
+        const { hosts: list } = expandCidr(sn.cidr, Math.max(256, cap));
         for (const h of list) {
-          if (h === sn.self) continue; // localhost already covers our own services
           if (!push(h, "interface")) break;
         }
       }
@@ -598,6 +611,7 @@ export class AutoDiscovery {
   }
 
   private async doRun(trigger: DiscoveryRun["trigger"]): Promise<DiscoveryRun> {
+    this.localListenCache = undefined;
     await this.load();
     if (this.settings.mode === "off") {
       throw new AdapterError("E_UNSUPPORTED", "Auto-discovery is off (设置 → 发现 → 模式)");
@@ -637,10 +651,13 @@ export class AutoDiscovery {
         const next = queue.shift();
         if (!next || this.stopped) return;
         try {
+          const extraHttpPorts =
+            next.host === "127.0.0.1" || next.host === "localhost" ? await this.localExtraHttpPorts() : undefined;
           const cands = await this.deps.scanHost({
             host: next.host,
             protocols: this.settings.protocols,
             timeoutMs: this.settings.timeoutMs,
+            extraHttpPorts,
           });
           for (const cand of cands) found.push({ cand, source: next.source, host: next.host });
         } catch (err) {
@@ -829,6 +846,18 @@ export class AutoDiscovery {
     return { ...c };
   }
 
+  /** Cache local listen ports for one run (localhost HTTP enrichment). */
+  private localListenCache: number[] | undefined;
+  private async localExtraHttpPorts(): Promise<number[] | undefined> {
+    if (this.localListenCache) return this.localListenCache;
+    try {
+      this.localListenCache = await listLocalListenTcpPorts({ max: 40 });
+    } catch {
+      this.localListenCache = [];
+    }
+    return this.localListenCache.length ? this.localListenCache : undefined;
+  }
+
   describe(): Record<string, unknown> {
     return {
       privateRanges: PRIVATE_RANGES_DOC,
@@ -837,7 +866,7 @@ export class AutoDiscovery {
       notes: [
         "每台主机单独走 scanHost（单主机 API、SSRF / 元数据拒绝不变）。",
         "候选默认 allowWrite=false，黑名单命中的不会出现在可启用列表。",
-        "autoEnable 仅对 Safe + 只读 + 非黑名单 + 无需凭据 的候选生效，默认关闭。",
+        "autoEnable 仅对 Safe + 只读 + 非黑名单 + 无需凭据 的候选生效；默认开启（黑名单为唯一退出）。",
       ],
     };
   }
