@@ -62,6 +62,19 @@ export function suggestFromEnvironment(inv: EnvironmentInventory): EnvironmentSu
     reason: plat === "darwin" ? "macOS launchctl is best-effort." : "Service list (systemd / sc.exe).",
   });
 
+  {
+    const present = (inv.browsers ?? []).filter((b) => b.present);
+    push({
+      protocol: "browser",
+      name: "local",
+      config: {},
+      confidence: present.length ? 0.75 : 0.45,
+      reason: present.length
+        ? `Detected ${present.map((b) => b.id).join(", ")} (allowDesktop stays false until explicit).`
+        : "Browser capability available (stub; allowDesktop default false, never auto-granted).",
+    });
+  }
+
   if (inv.container.dockerSock || inv.runtimes.some((r) => r.id === "docker" && r.present)) {
     push({
       protocol: "docker",

@@ -24,6 +24,14 @@ import {
 } from "../discovery/netscope.js";
 import { mdnsMulticastQuery, ssdpMulticastSearch, type MulticastHit } from "../discovery/multicast.js";
 import { listLocalListenTcpPorts } from "../discovery/local-ports.js";
+import { collectEnvironmentInventory, type EnvironmentInventory } from "../discovery/environment.js";
+import { suggestFromEnvironment } from "../discovery/environment-suggest.js";
+import {
+  filterLocalPlatformSuggestions,
+  localCandidateId,
+  localCapabilityUrl,
+} from "../discovery/local-capabilities.js";
+import { makeId } from "../catalog/registry.js";
 import { AdapterError, errorPayload } from "../runtime/errors.js";
 import { log } from "../runtime/log.js";
 import { recordSecurityEvent } from "../runtime/metrics.js";
@@ -40,6 +48,7 @@ import { callManagementTool, type ManagementContext } from "./tools.js";
  * metadata deny unchanged). Non-blacklisted ready candidates auto-enable when settings.autoEnable is on (default true)
  * via capability_register auto:true (readonly; Safe and Full). allowWrite is always false.
  * Blacklist is the opt-out; needsConfig candidates still wait for credentials.
+ * Each run also merges environment-inventory local/platform capabilities (os_info, platform_*, browser, …).
  */
 export type DiscoveryMode = "auto" | "manual" | "off";
 
@@ -72,7 +81,7 @@ export interface AutoCandidate {
   confidence: number;
   suggestedName: string;
   config: JsonObject;
-  source: "localhost" | "interface" | "manual" | "mdns" | "ssdp";
+  source: "localhost" | "interface" | "manual" | "mdns" | "ssdp" | "environment";
   firstSeen: string;
   lastSeen: string;
   online: boolean;
@@ -296,6 +305,8 @@ export interface AutoDiscoveryDeps {
   startupDelayMs?: number;
   /** Explicit mode (config override); wins over discovery.json. */
   mode?: DiscoveryMode;
+  /** Inject environment inventory (tests). Default: collectEnvironmentInventory. */
+  collectInventory?: () => Promise<EnvironmentInventory | null | undefined>;
 }
 
 interface PlannedHost {
@@ -413,6 +424,7 @@ export class AutoDiscovery {
       resolve: deps.resolve ?? (async (h) => (await lookup(h, { all: true })).map((r) => r.address)),
       now: deps.now ?? (() => new Date()),
       startupDelayMs: deps.startupDelayMs ?? 5000,
+      collectInventory: deps.collectInventory ?? (() => collectEnvironmentInventory()),
     };
     if (deps.discoveryEnabled === false) this.forcedOff = true;
     this.explicitMode = deps.mode ?? parseMode(env.EVERYTHING2MCP_DISCOVERY_MODE);
@@ -573,16 +585,24 @@ export class AutoDiscovery {
     }
     for (const c of this.candidates) {
       const hit = await this.deps.ctx.blacklist.matchCandidate({ protocol: c.protocol, url: c.url, hint: "", status: 0, config: c.config });
-      if (hit) {
+      const localAdapterId = makeId(c.protocol, c.suggestedName);
+      const capHit =
+        hit ??
+        (await this.deps.ctx.blacklist.matchAdapter(localAdapterId)) ??
+        (c.registeredId ? await this.deps.ctx.blacklist.matchAdapter(c.registeredId) : undefined);
+      if (capHit) {
         c.status = "blacklisted";
-        c.blacklistId = hit.id;
+        c.blacklistId = capHit.id;
         continue;
       }
       if (c.status === "blacklisted") {
         c.status = "new";
         c.blacklistId = undefined;
       }
-      const reg = regTargets.get(c.id);
+      const reg =
+        regTargets.get(c.id) ??
+        (this.deps.ctx.registry.getRecord(localAdapterId) ? localAdapterId : undefined) ??
+        (c.registeredId && this.deps.ctx.registry.getRecord(c.registeredId) ? c.registeredId : undefined);
       if (reg) {
         c.status = "enabled";
         c.registeredId = reg;
@@ -816,6 +836,8 @@ export class AutoDiscovery {
       // "found this run" only so miss/offline tracking still works.
     }
 
+    await this.mergeLocalPlatformCandidates(run, seenIds, nowIso);
+
     for (const c of this.candidates) {
       if (seenIds.has(c.id)) continue;
       if (!scannedHosts.has(c.host.toLowerCase())) continue;
@@ -835,7 +857,7 @@ export class AutoDiscovery {
           const res = (await callManagementTool(
             "capability_register",
             {
-              suggestion: { protocol: c.protocol, name: this.uniqueName(c.suggestedName), config: c.config, source: "discovery", confidence: c.confidence },
+              suggestion: { protocol: c.protocol, name: c.source === "environment" ? this.localPreferredName(c) : this.uniqueName(c.suggestedName), config: c.config, source: c.source === "environment" ? "environment" : "discovery", confidence: c.confidence },
               auto: true,
             },
             { ...ctx, actor: { kind: "console", tokenPresent: true } },
@@ -864,6 +886,14 @@ export class AutoDiscovery {
       dataDir: this.deps.dataDir,
     });
     return run;
+  }
+
+  /** Prefer stable protocol:local ids for environment caps (names may repeat across protocols). */
+  private localPreferredName(c: AutoCandidate): string {
+    const base = sanitizeName(c.suggestedName);
+    const id = makeId(c.protocol, base);
+    if (!this.deps.ctx.registry.getRecord(id)) return base;
+    return this.uniqueName(`${c.protocol}-${base}`);
   }
 
   private uniqueName(base: string): string {
@@ -899,12 +929,12 @@ export class AutoDiscovery {
     }
     applyCredentials(merged, c.credentials, input.credentials ?? {});
     merged.allowWrite = false;
-    const name = sanitizeName(input.name?.trim() || this.uniqueName(c.suggestedName));
+    const name = sanitizeName(input.name?.trim() || (c.source === "environment" ? this.localPreferredName(c) : this.uniqueName(c.suggestedName)));
     let res: { id: string; tools: string[] };
     try {
       res = (await callManagementTool(
         "capability_register",
-        { suggestion: { protocol: c.protocol, name, config: merged, source: "discovery", confidence: c.confidence } },
+        { suggestion: { protocol: c.protocol, name, config: merged, source: c.source === "environment" ? "environment" : "discovery", confidence: c.confidence } },
         this.deps.ctx,
       )) as { id: string; tools: string[] };
     } catch (err) {
@@ -939,6 +969,82 @@ export class AutoDiscovery {
     return { ...c };
   }
 
+
+  /**
+   * Surface local/platform capabilities from environment inventory (os_info, platform_*, browser, …).
+   * Not port-scan hits — stable id `protocol|local`. Readonly configs may auto-enable; allowDesktop stays false.
+   */
+  private async mergeLocalPlatformCandidates(run: DiscoveryRun, seenIds: Set<string>, nowIso: string): Promise<void> {
+    let inv: EnvironmentInventory | null | undefined;
+    try {
+      inv = await this.deps.collectInventory();
+    } catch (err) {
+      if (run.errors.length < 20) run.errors.push(`environment: ${errorPayload(err).error}`);
+      return;
+    }
+    if (!inv) return;
+    const suggestions = filterLocalPlatformSuggestions(suggestFromEnvironment(inv));
+    for (const s of suggestions) {
+      const protocol = s.protocol;
+      const id = localCandidateId(protocol);
+      const config: JsonObject = { ...s.config, allowWrite: false };
+      // Browser is surfaced with allowDesktop=false; never silently grant desktop.
+      if (protocol === "browser") {
+        config.allowDesktop = false;
+      }
+      const needsConfig = false;
+      const missing: string[] = [];
+      const credentials: CredentialField[] = [];
+      const presentBrowsers = (inv.browsers ?? []).filter((b) => b.present).map((b) => b.id);
+      const title =
+        protocol === "os_info"
+          ? `本机 ${inv.os.distro ?? inv.os.platform}/${inv.os.arch}`
+          : protocol === "browser"
+            ? `本机 browser${presentBrowsers.length ? ` (${presentBrowsers.join(", ")})` : ""}`
+            : `本机 ${protocol}`;
+      const existing = this.candidates.find((x) => x.id === id);
+      seenIds.add(id);
+      run.found += 1;
+      if (existing) {
+        existing.lastSeen = nowIso;
+        existing.online = true;
+        existing.missCount = 0;
+        existing.title = title;
+        existing.detail = s.reason;
+        existing.hint = s.reason;
+        existing.confidence = s.confidence;
+        existing.missing = missing;
+        existing.needsConfig = needsConfig;
+        existing.credentials = credentials;
+        existing.source = "environment";
+        if (existing.status !== "enabled") existing.config = config;
+      } else {
+        run.newCount += 1;
+        this.candidates.unshift({
+          id,
+          protocol,
+          host: "127.0.0.1",
+          url: localCapabilityUrl(protocol),
+          title,
+          hint: s.reason,
+          detail: s.reason,
+          confidence: s.confidence,
+          suggestedName: sanitizeName(s.name),
+          config,
+          source: "environment",
+          firstSeen: nowIso,
+          lastSeen: nowIso,
+          online: true,
+          missCount: 0,
+          status: "new",
+          needsConfig,
+          missing,
+          credentials,
+        });
+      }
+    }
+  }
+
   /** Cache local listen ports for one run (localhost HTTP enrichment). */
   private localListenCache: number[] | undefined;
   private async localExtraHttpPorts(): Promise<number[] | undefined> {
@@ -960,6 +1066,7 @@ export class AutoDiscovery {
         "每台主机单独走 scanHost（单主机 API、SSRF / 元数据拒绝不变）。",
         "候选默认 allowWrite=false，黑名单命中的不会出现在可启用列表。",
         "autoEnable 对只读 + 非黑名单 + 无需凭据 的候选生效（Safe/Full 均可）；默认开启（黑名单为唯一退出）。",
+        "本机平台能力（os_info / platform_* / browser / docker…）由环境盘点并入候选，不是端口指纹；browser 默认 allowDesktop=false。",
       ],
     };
   }

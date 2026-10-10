@@ -65,6 +65,8 @@ export interface EnvironmentInventory {
     endpoints: Array<{ kind: string; url: string }>;
     tokenEnvPresent: string[];
   };
+  /** Installed browser clues (PATH / common install paths). Existence only. */
+  browsers: Array<{ id: "chrome" | "msedge" | "firefox" | "chromium"; present: boolean; path?: string }>;
   /** Honest platform gaps (APIs we did not fake). */
   gaps: string[];
   policy: { allowWriteDefault: false; neverAutoOpenWrite: true; neverAutoOpenDesktop: true };
@@ -124,6 +126,7 @@ export async function collectEnvironmentInventory(opts: InventoryOptions = {}): 
   const container = detectContainer(plat, fs, env);
   const configPaths = collectConfigPaths(plat, fs, user.homedir ?? homedir());
   const cloud = detectCloud(fs, env, user.homedir ?? homedir(), gaps);
+  const browsers = detectBrowsers(plat, pathList, fs, env);
 
   const isElevatedHint =
     (typeof user.uid === "number" && user.uid === 0) ||
@@ -162,6 +165,7 @@ export async function collectEnvironmentInventory(opts: InventoryOptions = {}): 
     container,
     configPaths,
     cloud,
+    browsers,
     gaps,
     policy: { allowWriteDefault: false, neverAutoOpenWrite: true, neverAutoOpenDesktop: true },
   };
@@ -373,6 +377,84 @@ function collectConfigPaths(plat: NodeJS.Platform, fs: InventoryFs, home: string
   return candidates.map((c) => ({ ...c, exists: fs.exists(c.path) }));
 }
 
+
+const BROWSER_CANDIDATES: Array<{ id: "chrome" | "msedge" | "firefox" | "chromium"; bins: string[]; winPaths?: string[] }> = [
+  {
+    id: "chrome",
+    bins: ["google-chrome", "google-chrome-stable", "chrome"],
+    winPaths: ["Google\\Chrome\\Application\\chrome.exe"],
+  },
+  {
+    id: "msedge",
+    bins: ["microsoft-edge", "microsoft-edge-stable", "msedge"],
+    winPaths: ["Microsoft\\Edge\\Application\\msedge.exe"],
+  },
+  {
+    id: "firefox",
+    bins: ["firefox"],
+    winPaths: ["Mozilla Firefox\\firefox.exe"],
+  },
+  {
+    id: "chromium",
+    bins: ["chromium", "chromium-browser"],
+    winPaths: ["Chromium\\Application\\chrome.exe"],
+  },
+];
+
+/** Detect browsers via PATH + common install dirs. Never launches a browser. */
+export function detectBrowsers(
+  plat: NodeJS.Platform,
+  pathList: string[],
+  fs: InventoryFs,
+  env: NodeJS.ProcessEnv = processEnv,
+): EnvironmentInventory["browsers"] {
+  const programFiles = [env["ProgramFiles"], env["ProgramFiles(x86)"], env.LOCALAPPDATA].filter(
+    (p): p is string => typeof p === "string" && p.length > 0,
+  );
+  const out: EnvironmentInventory["browsers"] = [];
+  for (const cand of BROWSER_CANDIDATES) {
+    let hit: string | undefined;
+    for (const dir of pathList) {
+      for (const bin of cand.bins) {
+        const unix = join(dir, bin);
+        const win = join(dir, `${bin}.exe`);
+        if (fs.exists(unix)) {
+          hit = unix;
+          break;
+        }
+        if (fs.exists(win)) {
+          hit = win;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+    if (!hit && plat === "win32" && cand.winPaths) {
+      for (const root of programFiles) {
+        for (const rel of cand.winPaths) {
+          const p = join(root, rel);
+          if (fs.exists(p)) {
+            hit = p;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+    }
+    if (!hit && plat === "darwin") {
+      const macApps: Record<string, string> = {
+        chrome: "/Applications/Google Chrome.app",
+        msedge: "/Applications/Microsoft Edge.app",
+        firefox: "/Applications/Firefox.app",
+        chromium: "/Applications/Chromium.app",
+      };
+      const app = macApps[cand.id];
+      if (app && fs.exists(app)) hit = app;
+    }
+    out.push(hit ? { id: cand.id, present: true, path: hit } : { id: cand.id, present: false });
+  }
+  return out;
+}
 function envWinSystemRoot(): string {
   return processEnv.SystemRoot ?? processEnv.SYSTEMROOT ?? "C:\\Windows";
 }

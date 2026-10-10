@@ -223,6 +223,7 @@ MCP `tools/list` 会列出两层，用 `_meta.layer` 区分：
 - **需要配置**：通常需要凭据的协议（postgres / mysql / sqlserver / s3 / amqp）在没有凭据时、草案缺必填字段时、或探测看到鉴权提示时。卡片只出缺的字段（例如用户名 / 密码，会合并进 URL 或 config）。
 - **一键启用** 走 `capability_register`（同 `mcp_add`：校验、SSRF、安全钩子、黑名单）。失败时原因（错误码 + 信息，不含密钥）留在候选卡片上并标 **启用失败**（例如某些适配器只有 simulator、没有 live 客户端），成功后清除。
 - **自动启用**（`autoEnable`，默认开）：只会自动启用「无需配置 + 只读」的候选。
+- **本机平台能力**：每轮发现还会把环境盘点（`environment_inventory` / `suggestFromEnvironment`）里的本地能力并入候选——至少 `os_info`，以及 `platform_fs` / `platform_process` / `platform_service`；检测到浏览器时加入 `browser`（`allowDesktop` 恒为 false，不静默开桌面）。这些不是端口指纹命中；稳定 id 为 `protocol|local`，与网卡别名去重互不干扰。只读且无需凭据的仍走 `autoEnable`。
 - **忽略** 把候选移出列表（可恢复）；**加入黑名单** 以后不再出现。
 - 每轮运行写一条审计事件（kind=`discovery`），在「活动」和「设置 → 运行历史」可见。
 

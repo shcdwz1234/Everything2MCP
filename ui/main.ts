@@ -1161,6 +1161,7 @@ const SOURCE_LABEL: Record<string, string> = {
   manual: "手动范围",
   mdns: "mDNS",
   ssdp: "SSDP",
+  environment: "本机环境",
 };
 
 let protocolCache: J[] | undefined;

@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { AutoDiscovery, defaultDiscoveryMode, normalizeSettings, dedupeSelfCandidates, candidateServiceKey } from "../src/control/auto-discovery.js";
+import { filterLocalPlatformSuggestions, localCandidateId } from "../src/discovery/local-capabilities.js";
+import { suggestFromEnvironment } from "../src/discovery/environment-suggest.js";
+import type { EnvironmentInventory } from "../src/discovery/environment.js";
 import { createEverything2McpServer } from "../src/control/server.js";
 import { handleConsoleRest } from "../src/control/rest.js";
 import { expandCidr, isNeverScan, isPrivateIp, parseCidr, parseScopeEntry, subnetsFromInterfaces, hostPreferenceRank, isLoopbackHost, isTailscaleCgNat, collectSelfHosts } from "../src/discovery/netscope.js";
@@ -161,6 +164,7 @@ describe("S4 AutoDiscovery engine", { timeout: 30_000 }, () => {
       mdnsBrowse: async () => [{ host: "192.168.9.9", via: "mdns" }, { host: "8.8.8.8", via: "mdns" }, { host: "169.254.169.254", via: "mdns" }],
       ssdpBrowse: async () => [],
       resolve: async (h) => (h === "nas.lan" ? ["192.168.50.5"] : h === "evil.example" ? ["169.254.169.254"] : ["93.184.216.34"]),
+      collectInventory: async () => null,
       ...extra,
     });
     await d.load();
@@ -359,7 +363,7 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
 
       const bad = await put("/api/discovery/settings", { scopes: ["8.8.8.0/24"] });
       assert.equal(bad.status, 403);
-      const ok = await put("/api/discovery/settings", { mode: "manual", scopes: ["10.1.0.0/30"], multicast: false, includeInterfaces: false, includeLocalhost: false });
+      const ok = await put("/api/discovery/settings", { mode: "manual", scopes: ["10.1.0.0/30"], multicast: false, includeInterfaces: false, includeLocalhost: false, autoEnable: false });
       assert.equal(ok.status, 200);
       assert.deepEqual(ok.body.settings.scopes, ["10.1.0.0/30"]);
 
@@ -368,9 +372,10 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
         o.host === "10.1.0.1" ? [{ protocol: "redis", url: "redis://10.1.0.1:6379", hint: "", status: 1, config: { url: "redis://10.1.0.1:6379" } }] : [];
       const run = await put("/api/discovery/run", {}, "POST");
       assert.equal(run.status, 200);
-      assert.equal(run.body.run.found, 1);
+      assert.ok(run.body.run.found >= 1);
       const cands = await j("/api/discovery/candidates");
-      assert.equal(cands.body.candidates.length, 1);
+      assert.ok(cands.body.candidates.length >= 1);
+      assert.ok(cands.body.candidates.some((x) => x.protocol === "redis"));
       const runs = await j("/api/discovery/runs");
       assert.equal(runs.body.runs.length, 1);
 
@@ -383,7 +388,7 @@ describe("S4 REST discovery + overview + activity + enable toggle", { timeout: 3
       const ov = await j("/api/overview");
       assert.equal(ov.body.current.total, 1);
       assert.equal(ov.body.current.enabled, 1);
-      assert.equal(ov.body.supported.discovered, 1);
+      assert.ok(ov.body.supported.discovered >= 1);
       assert.ok(ov.body.supported.types > 50);
       assert.equal(ov.body.blacklist.total, 1);
       assert.equal(ov.body.blacklist.tool, 1);
@@ -446,3 +451,109 @@ describe("S4 follow-up: scan completeness + partner interfaces", () => {
     }
   });
 });
+
+describe("local/platform capabilities from environment", { timeout: 30_000 }, () => {
+  const cleanups: Array<() => Promise<void>> = [];
+  after(async () => {
+    for (const fn of cleanups.reverse()) await fn().catch(() => undefined);
+  });
+
+  function fakeInventory(partial: Partial<EnvironmentInventory> = {}): EnvironmentInventory {
+    return {
+      collectedAt: "2026-10-10T00:00:00.000Z",
+      os: { platform: "win32", arch: "x64", type: "Windows_NT", release: "10.0", hostname: "test", distro: "Windows", node: "22.0.0" },
+      permissions: { isElevatedHint: false, hints: [] },
+      listeningPorts: [],
+      runtimes: [],
+      container: { inContainer: false, kubernetes: false, dockerSock: false, podmanSock: false, clues: [] },
+      configPaths: [],
+      cloud: { providers: [], clues: [], endpoints: [], tokenEnvPresent: [] },
+      browsers: [
+        { id: "chrome", present: true, path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" },
+        { id: "msedge", present: false },
+        { id: "firefox", present: false },
+        { id: "chromium", present: false },
+      ],
+      gaps: [],
+      policy: { allowWriteDefault: false, neverAutoOpenWrite: true, neverAutoOpenDesktop: true },
+      ...partial,
+    };
+  }
+
+  it("filterLocalPlatformSuggestions keeps os_info/platform_*/browser and drops Listening TCP hits", () => {
+    const inv = fakeInventory();
+    const suggestions = suggestFromEnvironment(inv);
+    assert.ok(suggestions.some((s) => s.protocol === "os_info"));
+    assert.ok(suggestions.some((s) => s.protocol === "browser"));
+    const local = filterLocalPlatformSuggestions([
+      ...suggestions,
+      {
+        protocol: "redis",
+        name: "local",
+        config: { host: "127.0.0.1", port: 6379, allowWrite: false, allowShell: false, allowDesktop: false, allowReadSecrets: false },
+        confidence: 0.55,
+        reason: "Listening TCP 6379 (inventory; still readonly suggest).",
+        source: "environment",
+      },
+    ]);
+    assert.ok(local.every((s) => s.protocol !== "redis"));
+    assert.ok(local.some((s) => s.protocol === "os_info"));
+    assert.ok(local.some((s) => s.protocol === "platform_fs"));
+    assert.ok(local.some((s) => s.protocol === "browser"));
+    assert.equal(localCandidateId("os_info"), "os_info|local");
+  });
+
+  it("discovery run merges local caps, auto-enables os_info, browser allowDesktop stays false, no spam on re-run", async () => {
+    const t = await tmp();
+    const app = await createEverything2McpServer({ dataDir: t.dataDir });
+    cleanups.push(async () => {
+      await app.close();
+      await t.cleanup();
+    });
+    const ctx = { registry: app.registry, config: app.config, blacklist: app.blacklist, security: app.security, auditLog: app.auditLog };
+    const inv = fakeInventory();
+    const d = new AutoDiscovery({
+      ctx,
+      dataDir: t.dataDir,
+      env: {},
+      mode: "manual",
+      scanHost: async () => [],
+      networkInterfaces: () => ({ lo: [{ family: "IPv4", address: "127.0.0.1", netmask: "255.0.0.0", internal: true }] }),
+      mdnsBrowse: async () => [],
+      ssdpBrowse: async () => [],
+      collectInventory: async () => inv,
+    });
+    await d.load();
+    await d.updateSettings({
+      mode: "manual",
+      includeInterfaces: false,
+      includeLocalhost: true,
+      multicast: false,
+      autoEnable: true,
+      scopes: [],
+    });
+    const run = await d.run("manual");
+    assert.ok(run.found >= 4, "expected local caps in found, got " + run.found);
+    const cands = await d.listCandidates();
+    const envCands = cands.filter((x) => x.source === "environment");
+    assert.ok(envCands.some((x) => x.protocol === "os_info"));
+    assert.ok(envCands.some((x) => x.protocol === "platform_fs"));
+    assert.ok(envCands.some((x) => x.protocol === "platform_process"));
+    assert.ok(envCands.some((x) => x.protocol === "platform_service"));
+    assert.ok(envCands.some((x) => x.protocol === "browser"));
+    const browser = envCands.find((x) => x.protocol === "browser");
+    assert.ok(browser);
+    assert.equal(browser.config.allowDesktop, false);
+    assert.equal(browser.needsConfig, false);
+    assert.ok(run.autoEnabled.some((id) => id.startsWith("os_info:")), "os_info auto-enabled: " + JSON.stringify(run.autoEnabled));
+    assert.ok(app.registry.getRecord("os_info:local"), "os_info:local live");
+
+    const before = (await d.listCandidates()).filter((x) => x.source === "environment").length;
+    const run2 = await d.run("manual");
+    const after = (await d.listCandidates()).filter((x) => x.source === "environment");
+    assert.equal(after.length, before, "no duplicate environment candidates");
+    assert.equal(run2.newCount, 0, "second run adds no new local caps");
+    assert.equal(after.filter((x) => x.protocol === "os_info").length, 1);
+  });
+});
+

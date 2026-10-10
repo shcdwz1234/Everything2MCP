@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { collectEnvironmentInventory, parseProcAddr, parseProcNet } from "../src/discovery/environment.js";
+import { collectEnvironmentInventory, detectBrowsers, parseProcAddr, parseProcNet } from "../src/discovery/environment.js";
 import { suggestFromEnvironment } from "../src/discovery/environment-suggest.js";
 
 describe("Phase V2 environment inventory", () => {
@@ -23,7 +23,7 @@ describe("Phase V2 environment inventory", () => {
       env: { PATH: "/usr/bin:/opt/bin", KUBERNETES_SERVICE_HOST: "" },
       pathList: ["/usr/bin"],
       fs: {
-        exists: (p) => p === "/usr/bin/node" || p === "/etc/os-release" || p === "/.dockerenv",
+        exists: (p) => p.replace(/\\/g, "/").endsWith("/usr/bin/node") || p === "/usr/bin/node" || p === "/etc/os-release" || p === "/.dockerenv" || p.replace(/\\/g, "/") === "/usr/bin/node",
         readFile: (p) => {
           if (p === "/etc/os-release") return 'PRETTY_NAME="Fixture Linux"\nID=fixture\n';
           if (p === "/proc/net/tcp") {
@@ -51,6 +51,8 @@ describe("Phase V2 environment inventory", () => {
     assert.ok(suggestions.some((s) => s.protocol === "os_info"));
     assert.ok(suggestions.some((s) => s.protocol === "platform_fs"));
     assert.ok(suggestions.some((s) => s.protocol === "redis"));
+    assert.ok(Array.isArray(inv.browsers));
+    assert.ok(suggestions.some((s) => s.protocol === "browser"));
   });
 
   it("cloud clues never copy secrets or query IMDS", async () => {
@@ -91,4 +93,19 @@ describe("Phase V2 environment inventory", () => {
     assert.deepEqual(inv.listeningPorts, []);
     assert.ok(inv.gaps.some((g) => /win32 listening/i.test(g)));
   });
+
+  it("detectBrowsers finds PATH + win install clues without launching", () => {
+    const found = detectBrowsers(
+      "win32",
+      ["C:\\fake\\bin"],
+      {
+        exists: (p) => p === "C:\\fake\\bin\\chrome.exe" || p.endsWith("Google\\Chrome\\Application\\chrome.exe"),
+        readFile: () => undefined,
+      },
+      { ProgramFiles: "C:\\Program Files" },
+    );
+    assert.ok(found.some((b) => b.id === "chrome" && b.present));
+    assert.ok(found.some((b) => b.id === "firefox" && !b.present));
+  });
 });
+
