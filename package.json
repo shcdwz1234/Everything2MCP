@@ -1,7 +1,7 @@
 {
   "name": "everything2mcp",
   "version": "0.1.0",
-  "description": "Universal protocol→MCP bridge: register heterogeneous endpoints and call them as MCP tools.",
+  "description": "One MCP for agents: auto-discover local & platform caps, bridge heterogeneous protocols, Safe/Full policy, console UX, Partner ingress (Feishu/DingTalk/WeCom).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -43,7 +43,15 @@
     "pulsar",
     "gcs",
     "oss",
-    "influx"
+    "influx",
+    "feishu",
+    "dingtalk",
+    "wecom",
+    "partner",
+    "mcp-bridge",
+    "auto-discovery",
+    "tailscale",
+    "safe-mode"
   ],
   "license": "MIT",
   "dependencies": {

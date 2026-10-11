@@ -1,25 +1,67 @@
 # Everything2MCP
 
-把异构协议（OpenAPI/HTTP、MQTT、SOAP、gRPC、消息队列、工业总线、RPC、邮件/目录、对象存储、检索/编排等）动态注册成 **MCP tools**，让 AI Agent 通过稳定的 MCP 表面调用外部系统。
+> **一个 MCP，接住本机能力与异构协议——自动发现、Safe/Full 闸门、控制台与 Partner 入口。**
+>
+> **One MCP for agents: auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly.**
 
-> Universal protocol→MCP bridge. Discover, register, and invoke heterogeneous endpoints as hot-reloadable MCP tools.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node ≥18.18](https://img.shields.io/badge/node-%E2%89%A518.18-brightgreen.svg)](package.json)
+[![Tests](https://img.shields.io/badge/tests-140%20suites%20%2F%20570-blue.svg)](docs/AUDIT.md)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20HTTP%20%7C%20SSE-purple.svg)](docs/ARCHITECTURE.md)
+[![Phase](https://img.shields.io/badge/phase-X%20Partner%20%2B%20Compat-orange.svg)](docs/RELEASE_NOTES.md)
+<!-- Replace with live CI once the public remote is set:
+[![CI](https://img.shields.io/github/actions/workflow/status/OWNER/everything2mcp/ci.yml?branch=main)](../../actions)
+[![Stars](https://img.shields.io/github/stars/OWNER/everything2mcp?style=social)](../../stargazers)
+-->
 
-**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。逻辑平面仍是五包。测试：`npm test`。
+**不是**官方 MCP 示例里的 [`everything` server](https://github.com/modelcontextprotocol/servers)——那是 SDK 全功能演示；本仓库是独立的「本机能力 + 南向协议 → 一个 MCP 表面」桥。
 
+**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。协议状态诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。测试：`npm test`（约 140 suites / 570）。
 
-## 名称说明（不是官方 everything server）
+## 为什么关心
 
-本项目 **Everything2MCP** 是独立的「异构协议 → MCP」桥。它**不是** Model Context Protocol 官方示例仓库里的 [`everything` server](https://github.com/modelcontextprotocol/servers)（那个是 MCP SDK 的全功能演示服务器）。名称相近，用途不同：官方 `everything` 演示 MCP 能力本身；本仓库把 OpenAPI/MQTT/工业总线等**南向协议**挂成 MCP tools。
+Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套客户端。Everything2MCP 把它们收成 **一个** MCP server：
 
-## 为什么
+| 痛点 | Everything2MCP 怎么解 |
+| --- | --- |
+| 协议碎片化 | OpenAPI / gRPC / MQTT / 队列 / 工业总线 / SQL / 对象存储… 热注册成 MCP tools |
+| 本机能力被闲置 | 自动发现私网与平台能力（`os_info`、Docker、文件系统等），候选只读、默认不自动启用 |
+| 安全焦虑 | 默认 **Safe**、`allowWrite=false`；黑名单 Full 也开；Agent **永不**扫 CIDR |
+| 厂商不愿写 MCP | **Partner** 清单 + HTTP invoke；飞书 / 钉钉 / 企微等 native 适配器；`mcp_bridge` 仅兜底 |
+| 远程运维 | 默认绑 `127.0.0.1`；HTTP token；**Tailscale / 内网友好**（设 token 后可安全暴露） |
 
-每个系统都有自己的接口形态：REST、消息队列、SOAP……Agent 不想为每一种协议各接一套客户端。Everything2MCP 作为桥：
+三步心智模型：`mcp_add` / 发现启用 → 适配器映射 tools → Agent 普通 `tools/call`。无需重启（热注册）。
 
-1. 用管理工具 `mcp_add` 注册一个端点
-2. 适配器把该端点的操作映射成 MCP tools（`openapi.widgets.listWidgets`）
-3. Agent 像调用普通 MCP tool 一样 `tools/call`
+## 面向谁
 
-无需重启进程即可增删改（热注册）。
+- **Agent / IDE 用户**（Cursor、Claude Desktop…）——要一个稳定 MCP 入口，而不是 N 个协议客户端
+- **平台与集成开发者**——用 Partner SDK 把应用挂进来，**零 MCP 代码**（见 `examples/partner-demo-chat/`）
+- **安全敏感的自托管场景**——Safe/Full、黑名单、审计、HMAC 完整性、限流
+- **中国协作栈**——飞书 / 钉钉 / 企微 native 路径（模拟器 + `allowWrite` 闸；细节见协议目录）
+
+## 你得到什么
+
+1. **一个 MCP**（stdio 默认；可选 Streamable HTTP `/mcp` + 遗留 SSE）
+2. **自动发现** —— 控制台私网扫描 + Agent 单主机探测；本机/平台能力可热加载
+3. **Safe / Full 政策** —— 默认只读数据面；Full ≠ 关掉黑名单
+4. **同进程控制台** —— `/ui/` 深色 UX：能力 / 活动 / 设置；向导含「测试连接」
+5. **Partner 入口** —— 南向应用不写 MCP；ingress 徽章：`partner` / `native` / `mcp_bridge`
+6. **诚实协议表** —— Implemented（真实客户端 + 测试）vs Thin（可用但收窄）vs leftover
+
+## Screenshots
+
+实机控制台截图（Edge headless → `http://127.0.0.1:8742/ui/`）。本地先 `EVERYTHING2MCP_TRANSPORT=http npm start`。
+
+| View | Preview |
+| --- | --- |
+| Capabilities（当前适配器 / tools） | ![Capabilities](docs/images/console-capabilities.png) |
+| Discovery / candidates | ![Discovery candidates](docs/images/console-discovery.png) |
+| Settings（自动发现） | ![Settings](docs/images/console-settings.png) |
+| Security（Safe / Full） | ![Security](docs/images/console-security.png) |
+| Partner | ![Partner](docs/images/console-partner.png) |
+
+**3 分钟上手：** [docs/DEMO.md](docs/DEMO.md)
+
 
 ## 快速开始
 
@@ -50,7 +92,15 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 # 探活（无 token）: http://127.0.0.1:8742/health
 ```
 
-鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`（**离开本机回环前必须设置**），客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。未设置时仅适合受信回环。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
+Windows PowerShell（连接符用 `;`，不用 `&&`）：
+
+```powershell
+$env:EVERYTHING2MCP_TRANSPORT = "http"
+$env:EVERYTHING2MCP_HTTP_PORT = "8742"
+npm start
+```
+
+鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`（**离开本机回环前必须设置**），客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。未设置时仅适合受信回环。**Tailscale / 内网曝露前必须设 token**（默认绑 `127.0.0.1`，友好配合内网）。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
 
 同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。一级页：**能力**（当前能力 / 可支持能力 / 黑名单 三 tab，摘要条计数与 tab 对应）、**活动**、**设置**（自动发现、安全模式）；Tools / Discovery / Import / 矩阵 / 审计 / 计划桥 / 安全 / 热加载 / 伙伴 收进侧栏「高级」。添加能力走按协议 `configSchema` 生成的向导，先**测试连接**再保存。写操作需二次确认且仍受 `allowWrite`。私网**自动发现**默认开启（自动 / 手动 / 关闭），规则见 [docs/DISCOVERY.md](docs/DISCOVERY.md#自动发现auto-discovery)。南向 ingress 徽章：`partner` / `native` / `mcp_bridge`（兜底）。
 
@@ -472,21 +522,6 @@ ui/                同进程控制台源；构建进 dist/ui
 
 依赖：`transport → control → catalog`；`control → discovery`；适配器经 `runtime/bootstrap` 注册；**adapters 不得 import control/transport**。详见 `docs/ARCHITECTURE.md`。
 
-
-## Screenshots
-
-Real console captures (Edge headless against a live `http://127.0.0.1:8742/ui/` session). After `EVERYTHING2MCP_TRANSPORT=http npm start`, open the same URL locally.
-
-| View | Preview |
-| --- | --- |
-| Capabilities (current adapters / tools) | ![Capabilities](docs/images/console-capabilities.png) |
-| Discovery / candidates (enable from scan) | ![Discovery candidates](docs/images/console-discovery.png) |
-| Settings (auto-discovery) | ![Settings](docs/images/console-settings.png) |
-| Security (Safe / Full) | ![Security](docs/images/console-security.png) |
-| Partner (when a partner is registered) | ![Partner](docs/images/console-partner.png) |
-
-More walkthrough: [docs/DEMO.md](docs/DEMO.md).
-
 ## 文档
 
 - [3-minute demo](docs/DEMO.md)
@@ -532,17 +567,46 @@ More walkthrough: [docs/DEMO.md](docs/DEMO.md).
 
 ## English
 
-**Not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server — this repo is a protocol→MCP bridge.
+**Not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server — this repo is a **local-capability + protocol → MCP** bridge.
 
-Everything2MCP is a single-process MCP server: **discover, register, invoke** heterogeneous protocols as MCP tools. **stdio is the default.** Set `EVERYTHING2MCP_TRANSPORT=http` (or `sse`) to serve Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and the same-process dark console at `/ui/` (REST under `/api/*`) on port `8742`. Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopback; clients send `Authorization: Bearer` or `x-api-key`. Default bind is `127.0.0.1`.
+### One-liner
 
-**Phase X + Console Redesign is current** (Partner protocol + Compat Catalog + native apps + mcp_bridge 兜底; console with 能力 / 活动 / 设置, schema-driven add wizard with test-connection, capability- and tool-level blacklist, private-network auto-discovery). Test baseline **140 suites / 570 tests** (Node 22). Southbound is not MCP by default. Next work waits for an explicit continue.
+**One MCP for agents: auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly.**
 
-Security (locked): Safe vs Full; blacklist always on (including Full) at target / capability / tool granularity; default `allowWrite=false`; Full ≠ global write; agent tools never accept CIDR and `ALLOW_SCAN` is dead; console auto-discovery (auto / manual / off) scans private ranges only (interfaces ≤ /24, manual ≤ /16, per-run host cap, never link-local or cloud metadata, candidates read-only); no shim; actor-bound audience so agents cannot spoof `audience=console`. Plugin SPI: builtins only in v1.
+### Why it exists
 
-Agents should prefer `mcp_plan_bridge`, `discovery_scan_host`, `mcp_add_from_discovery`, and `schema_import`. Agent discovery tools never scan network ranges or metadata IPs. Protocol honesty table: `docs/PROTOCOLS.md`. Unified error codes: `docs/ERRORS.md`.
+Agents should not maintain a separate client for every REST API, queue, industrial bus, or chat suite. Everything2MCP is a single-process MCP server that:
+
+- **Discovers** private-network endpoints and local/platform capabilities (console auto / manual / off; agent tools scan **one host only**)
+- **Registers** them as hot-reloadable MCP tools (Shared Policy Gateway for add/remove)
+- **Gates** invokes with Safe vs Full, always-on blacklist, default `allowWrite=false`
+- **Exposes** a same-process dark console at `/ui/` plus Streamable HTTP `/mcp` (and legacy SSE)
+- **Prefers** Partner protocol and native OpenAPI adapters (Feishu / DingTalk / WeCom / Slack / Notion / GitHub); `mcp_bridge` is an explicit last resort
+- **Documents honesty** — **Implemented** vs **Thin** vs leftover in [docs/PROTOCOLS.md](docs/PROTOCOLS.md). Thin means usable but intentionally narrow (simulator, encoder, or limited ops). **We do not claim every protocol is production-ready.**
+
+### Who it is for
+
+MCP client users (Cursor / Claude Desktop), integrators who refuse to rewrite apps as MCP servers, self-hosters who want Safe defaults and Tailscale-friendly loopback-first HTTP, and teams on Feishu / DingTalk / WeCom.
+
+### Quick start
 
 ```bash
-npm install && npm run build && npm test
+npm ci && npm run build && npm test
 EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
+# Console: http://127.0.0.1:8742/ui/
+# MCP:     http://127.0.0.1:8742/mcp
 ```
+
+PowerShell (`;` not `&&`):
+
+```powershell
+npm ci; npm run build; npm test
+$env:EVERYTHING2MCP_TRANSPORT = "http"; $env:EVERYTHING2MCP_HTTP_PORT = "8742"; npm start
+```
+
+Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopback (including Tailscale). Default bind is `127.0.0.1`.
+
+Walkthrough + screenshots: [docs/DEMO.md](docs/DEMO.md). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security (locked): [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md).
+
+**Phase X + Console Redesign is current.** Southbound is not MCP by default. Test baseline **~140 suites / 570 tests**. Next work waits for an explicit continue.
+
