@@ -475,18 +475,21 @@ ui/                同进程控制台源；构建进 dist/ui
 
 ## Screenshots
 
-> Placeholder — add console screenshots under `docs/images/` when ready.
+Real console captures (Edge headless against a live `http://127.0.0.1:8742/ui/` session). After `EVERYTHING2MCP_TRANSPORT=http npm start`, open the same URL locally.
 
-| | |
+| View | Preview |
 | --- | --- |
-| Capabilities | _(todo: `docs/images/console-capabilities.png`)_ |
-| Discovery | _(todo: `docs/images/console-discovery.png`)_ |
-| Settings / Safe mode | _(todo: `docs/images/console-settings.png`)_ |
+| Capabilities (current adapters / tools) | ![Capabilities](docs/images/console-capabilities.png) |
+| Discovery / candidates (enable from scan) | ![Discovery candidates](docs/images/console-discovery.png) |
+| Settings (auto-discovery) | ![Settings](docs/images/console-settings.png) |
+| Security (Safe / Full) | ![Security](docs/images/console-security.png) |
+| Partner (when a partner is registered) | ![Partner](docs/images/console-partner.png) |
 
-After `EVERYTHING2MCP_TRANSPORT=http npm start`, open `http://127.0.0.1:8742/ui/`.
+More walkthrough: [docs/DEMO.md](docs/DEMO.md).
 
 ## 文档
 
+- [3-minute demo](docs/DEMO.md)
 - [架构](docs/ARCHITECTURE.md)
 - [ADR 0001 五包布局](docs/adr/0001-five-package-layout.md)
 - [ADR 0002 Audience 绑定 actor](docs/adr/0002-actor-bound-audience.md)
