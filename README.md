@@ -6,6 +6,11 @@
 
 **当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。逻辑平面仍是五包。测试：`npm test`。
 
+
+## 名称说明（不是官方 everything server）
+
+本项目 **Everything2MCP** 是独立的「异构协议 → MCP」桥。它**不是** Model Context Protocol 官方示例仓库里的 [`everything` server](https://github.com/modelcontextprotocol/servers)（那个是 MCP SDK 的全功能演示服务器）。名称相近，用途不同：官方 `everything` 演示 MCP 能力本身；本仓库把 OpenAPI/MQTT/工业总线等**南向协议**挂成 MCP tools。
+
 ## 为什么
 
 每个系统都有自己的接口形态：REST、消息队列、SOAP……Agent 不想为每一种协议各接一套客户端。Everything2MCP 作为桥：
@@ -18,13 +23,14 @@
 
 ## 快速开始
 
-在已同步的树里（例如 Windows `D:\Everything2MCP`）：
+克隆本仓库后：
 
 ```bash
-cd D:\Everything2MCP          # 或本机实际路径
-npm install
+git clone <repo-url> everything2mcp
+cd everything2mcp
+npm ci          # 或 npm install
 npm run build
-`npm test`                      # 全绿
+npm test        # 应全绿
 ```
 
 Node **≥ 18.18**。默认 **stdio MCP**（给 Cursor / Claude Desktop；不要当终端 REPL 用）：
@@ -44,7 +50,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 # 探活（无 token）: http://127.0.0.1:8742/health
 ```
 
-可选鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`，客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
+鉴权：设置 `EVERYTHING2MCP_HTTP_TOKEN`（**离开本机回环前必须设置**），客户端带 `Authorization: Bearer <token>` 或 `x-api-key`。未设置时仅适合受信回环。`EVERYTHING2MCP_TRANSPORT=sse` 与 `http` 绑定同一监听器。
 
 同进程控制台在 **`/ui/`**，REST 在 **`/api/*`**，复用 management tools。详见 [docs/CONSOLE.md](docs/CONSOLE.md)。顶栏可粘贴同一 HTTP token。一级页：**能力**（当前能力 / 可支持能力 / 黑名单 三 tab，摘要条计数与 tab 对应）、**活动**、**设置**（自动发现、安全模式）；Tools / Discovery / Import / 矩阵 / 审计 / 计划桥 / 安全 / 热加载 / 伙伴 收进侧栏「高级」。添加能力走按协议 `configSchema` 生成的向导，先**测试连接**再保存。写操作需二次确认且仍受 `allowWrite`。私网**自动发现**默认开启（自动 / 手动 / 关闭），规则见 [docs/DISCOVERY.md](docs/DISCOVERY.md#自动发现auto-discovery)。南向 ingress 徽章：`partner` / `native` / `mcp_bridge`（兜底）。
 
@@ -68,11 +74,37 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 | `EVERYTHING2MCP_HTTP_PATH` | `/mcp` | Streamable HTTP 路径 |
 | `EVERYTHING2MCP_SSE_PATH` | `/sse` | 遗留 SSE GET 路径 |
 | `EVERYTHING2MCP_SSE_MESSAGES_PATH` | `/messages` | 遗留 SSE POST 路径 |
-| `EVERYTHING2MCP_HTTP_TOKEN` | （空） | 可选共享密钥；空则不鉴权 |
+| `EVERYTHING2MCP_HTTP_TOKEN` | （空） | 共享密钥；**离开回环前必填**；空则不鉴权（仅适合本机） |
 | `EVERYTHING2MCP_HTTP_TOKEN_HEADER` | （空） | 额外 token header（仍接受 Authorization / x-api-key） |
 | `EVERYTHING2MCP_INTEGRITY_KEY` | （空） | 可选 HMAC 密钥；也可放 `dataDir/.integrity-key`。空则只用 SHA-256 |
 | `EVERYTHING2MCP_RATE_LIMIT_INVOKE` | `60` | Safe 下每分钟业务 invoke 上限；`0` = 不限。Full 跳过 |
 | `EVERYTHING2MCP_RATE_LIMIT_DISCOVER` | `20` | Safe 下每分钟 discover 上限；`0` = 不限。Full 跳过 |
+
+
+## Docker
+
+默认绑定安全：compose 只把宿主机 `127.0.0.1:8742` 映射进容器。容器内监听 `0.0.0.0:8742`（容器网络需要）。**对外网卡暴露时必须设置 token。**
+
+```bash
+# 建议先生成 token
+export EVERYTHING2MCP_HTTP_TOKEN="$(openssl rand -hex 24)"   # Windows: 用安全随机串
+
+docker compose up --build
+# UI:  http://127.0.0.1:8742/ui/
+# MCP: http://127.0.0.1:8742/mcp   (Authorization: Bearer $EVERYTHING2MCP_HTTP_TOKEN)
+```
+
+或直接：
+
+```bash
+docker build -t everything2mcp .
+docker run --rm -p 127.0.0.1:8742:8742 \
+  -e EVERYTHING2MCP_HTTP_TOKEN=replace-me \
+  -v e2m-data:/data \
+  everything2mcp
+```
+
+详见 `Dockerfile`、`docker-compose.yml`。数据目录挂到 `/data`（对应 `EVERYTHING2MCP_DATA_DIR`）；不要把含 token 的宿主机 `data/` 提交进 git。
 
 ## 架构（单进程五包）
 
@@ -127,14 +159,14 @@ Drops：`~/.everything2mcp/drops/*.json`（Windows `%LOCALAPPDATA%\everything2mc
 
 ## 接入 Cursor / Claude Desktop
 
-MCP 使用 **stdio**。路径按本机修改（同步树在 `D:\Everything2MCP` 时用绝对路径）：
+MCP 使用 **stdio**。把 `args` 换成本机仓库里 `dist/index.js` 的绝对路径（或相对路径，见 `examples/cursor-mcp.json`）：
 
 ```json
 {
   "mcpServers": {
     "everything2mcp": {
       "command": "node",
-      "args": ["D:\\Everything2MCP\\dist\\index.js"]
+      "args": ["/absolute/path/to/everything2mcp/dist/index.js"]
     }
   }
 }
@@ -316,7 +348,12 @@ AMQP：`publish`、`consume_once` / `get` / `ack`、`list_queues`（线协议 **
 
 ### 薄适配器（工业 / 消息 / 数据 / 平台）
 
-状态分 **Implemented**（真客户端路径）与 **Thin**（模拟器 / 子集）。完整合同与限制见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)。
+状态分两档（完整合同见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）：
+
+- **Implemented** — 真实客户端路径 + hermetic 测试；可连 live 目标（仍受 `allowWrite` / Safe 闸）
+- **Thin** — 已注册且 `listTools`/`invoke` 可用，但能力故意收窄（模拟器、编码器、或有限 HTTP/线协议子集）；**不是**「未实现」
+
+下表为摘要；以 `docs/PROTOCOLS.md` 为准。
 
 | protocol | 配置要点 | tools | 限制 |
 | --- | --- | --- | --- |
@@ -435,6 +472,19 @@ ui/                同进程控制台源；构建进 dist/ui
 
 依赖：`transport → control → catalog`；`control → discovery`；适配器经 `runtime/bootstrap` 注册；**adapters 不得 import control/transport**。详见 `docs/ARCHITECTURE.md`。
 
+
+## Screenshots
+
+> Placeholder — add console screenshots under `docs/images/` when ready.
+
+| | |
+| --- | --- |
+| Capabilities | _(todo: `docs/images/console-capabilities.png`)_ |
+| Discovery | _(todo: `docs/images/console-discovery.png`)_ |
+| Settings / Safe mode | _(todo: `docs/images/console-settings.png`)_ |
+
+After `EVERYTHING2MCP_TRANSPORT=http npm start`, open `http://127.0.0.1:8742/ui/`.
+
 ## 文档
 
 - [架构](docs/ARCHITECTURE.md)
@@ -452,7 +502,7 @@ ui/                同进程控制台源；构建进 dist/ui
 - [体检与测试覆盖](docs/AUDIT.md)
 - [统一错误码](docs/ERRORS.md)
 
-没有单独的 `CHANGELOG.md` / `CONTRIBUTING.md`：发版与基线在 `docs/RELEASE_NOTES.md`；贡献入口就是本 README 的快速开始 + `npm test`。
+发版与基线见 `docs/RELEASE_NOTES.md`。贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全报告见 [SECURITY.md](SECURITY.md)。
 
 ## 开发脚本
 
@@ -479,7 +529,9 @@ ui/                同进程控制台源；构建进 dist/ui
 
 ## English
 
-Everything2MCP is a single-process MCP server: **discover, register, invoke** heterogeneous protocols as MCP tools. **stdio is the default.** Set `EVERYTHING2MCP_TRANSPORT=http` (or `sse`) to serve Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and the same-process dark console at `/ui/` (REST under `/api/*`) on port `8742`. Optional `EVERYTHING2MCP_HTTP_TOKEN` requires `Authorization: Bearer` or `x-api-key`.
+**Not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server — this repo is a protocol→MCP bridge.
+
+Everything2MCP is a single-process MCP server: **discover, register, invoke** heterogeneous protocols as MCP tools. **stdio is the default.** Set `EVERYTHING2MCP_TRANSPORT=http` (or `sse`) to serve Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and the same-process dark console at `/ui/` (REST under `/api/*`) on port `8742`. Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopback; clients send `Authorization: Bearer` or `x-api-key`. Default bind is `127.0.0.1`.
 
 **Phase X + Console Redesign is current** (Partner protocol + Compat Catalog + native apps + mcp_bridge 兜底; console with 能力 / 活动 / 设置, schema-driven add wizard with test-connection, capability- and tool-level blacklist, private-network auto-discovery). Test baseline **140 suites / 570 tests** (Node 22). Southbound is not MCP by default. Next work waits for an explicit continue.
 

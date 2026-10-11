@@ -74,5 +74,24 @@
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
-  }
+  },
+  "author": "shui",
+  "repository": {
+    "type": "git",
+    "url": "git+http://localhost:8929/shui/xuexi/everything2mcp.git"
+  },
+  "homepage": "http://localhost:8929/shui/xuexi/everything2mcp",
+  "bugs": {
+    "url": "http://localhost:8929/shui/xuexi/everything2mcp/issues"
+  },
+  "files": [
+    "dist/",
+    "compat/",
+    "examples/",
+    "docs/",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ]
 }
