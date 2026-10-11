@@ -46,7 +46,10 @@ export function createMemoryFtp(): FtpHandle {
 
 class FtpControl {
   private buf = "";
-  constructor(private readonly socket: Socket) {}
+  constructor(private readonly socket: Socket) {
+    // Keep a listener so destroy()/RST after QUIT cannot become uncaughtException (esp. Windows).
+    this.socket.on("error", () => undefined);
+  }
 
   async readLine(timeoutMs: number): Promise<string> {
     if (this.buf.includes("\n")) {
@@ -185,6 +188,7 @@ async function liveFtp(config: Record<string, unknown>): Promise<FtpHandle> {
     async close() {
       try {
         ctrl.write("QUIT");
+        await ctrl.readLine(Math.min(timeoutMs, 500)).catch(() => undefined);
       } catch {
         /* ignore */
       }
@@ -204,6 +208,7 @@ export async function listenFtpLoopback(files?: Map<string, string>): Promise<{ 
   const store = files ?? new Map<string, string>([["readme.txt", "hello ftp"]]);
   const dataServers: Server[] = [];
   const server = createServer((socket) => {
+    socket.on("error", () => undefined);
     let buf = "";
     socket.write("220 e2mcp FTP ready\r\n");
     const send = (line: string) => socket.write(`${line}\r\n`);
@@ -226,6 +231,7 @@ export async function listenFtpLoopback(files?: Map<string, string>): Promise<{ 
           dataServers.push(ds);
           const slot = socket as Socket & { _data?: Server; _peer?: Socket };
           ds.on("connection", (dataSock) => {
+            dataSock.on("error", () => undefined);
             slot._peer = dataSock;
           });
           ds.listen(0, "127.0.0.1", () => {

@@ -37,10 +37,13 @@ function asAddressList(value: unknown): string | string[] | undefined {
 
 class LineSock {
   private leftover = "";
-  constructor(private socket: Socket) {}
+  constructor(private socket: Socket) {
+    this.socket.on("error", () => undefined);
+  }
   attach(socket: Socket): void {
     this.socket = socket;
     this.leftover = "";
+    this.socket.on("error", () => undefined);
   }
   write(line: string): void {
     this.socket.write(`${line}\r\n`);
@@ -108,6 +111,7 @@ async function rawSmtp(config: Record<string, unknown>): Promise<SmtpTransporter
     if (!caps.some((l) => /STARTTLS/i.test(l))) {
       try {
         io.write("QUIT");
+        await io.readLine(Math.min(timeoutMs, 500)).catch(() => undefined);
       } catch {
         /* ignore */
       }
@@ -154,9 +158,10 @@ async function rawSmtp(config: Record<string, unknown>): Promise<SmtpTransporter
       await expectCode(io, timeoutMs, "250");
       return { ok: true as const, banner };
     },
-    close() {
+    async close() {
       try {
         io.write("QUIT");
+        await io.readLine(Math.min(timeoutMs, 500)).catch(() => undefined);
       } catch {
         /* ignore */
       }
@@ -184,6 +189,7 @@ export async function listenSmtpStarttlsLoopback(key: string, cert: string): Pro
 }
 
 function bindSmtpSession(socket: Socket, inbox: SmtpMail[], offerStarttls: boolean, key?: string, cert?: string): void {
+  socket.on("error", () => undefined);
   let io: Socket = socket;
   let mailFrom = "";
   const rcpt: string[] = [];

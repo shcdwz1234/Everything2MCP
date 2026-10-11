@@ -169,6 +169,7 @@ async function livePop3(config: Record<string, unknown>): Promise<Pop3Handle> {
     async close() {
       try {
         io.write("QUIT");
+        await io.readLine(Math.min(timeoutMs, 500)).catch(() => undefined);
       } catch {
         /* ignore */
       }
@@ -186,6 +187,7 @@ async function defaultConnect(config: Record<string, unknown>): Promise<Pop3Hand
 export async function listenPop3Loopback(): Promise<{ port: number; close: () => Promise<void> }> {
   const mem = createMemoryPop3();
   const server = createServer((socket) => {
+    socket.on("error", () => undefined);
     let buf = "";
     socket.write("+OK POP3 e2mcp ready\r\n");
     socket.on("data", (chunk) => {

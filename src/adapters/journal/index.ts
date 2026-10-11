@@ -135,7 +135,7 @@ export class JournalAdapter implements ProtocolAdapter {
 
 function detectFormat(config: Record<string, unknown>, path: string, family: string): string {
   if (typeof config.format === "string" && config.format.trim()) return config.format.trim();
-  if (/\.xml$/i.test(path) || family === "win32") return "evtx-xml";
+  if (/\.xml$/i.test(path)) return "evtx-xml"; // path-based; win32 without path stays E_UNSUPPORTED in defaultConnect
   if (/journal|export/i.test(path)) return "journal-export";
   return "syslog";
 }

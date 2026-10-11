@@ -31,7 +31,7 @@ describe("compat_scan", () => {
   it("marks mcpServers files as P3 bridge 兜底 only", () => {
     const result = scanCompat({
       home: "/tmp/fake-home",
-      fsExists: (p) => p.endsWith(".cursor/mcp.json"),
+      fsExists: (p) => p.replace(/\\/g, "/").endsWith(".cursor/mcp.json"),
       fsRead: () => JSON.stringify({ mcpServers: { fs: { command: "npx" } } }),
       installed: [],
       env: {},
