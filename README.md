@@ -2,13 +2,13 @@
 
 **语言 / Language:** [中文](#中文) · [English](#english)
 
-> **万物都能 MCP** — 本机能力、异构协议、协作套件，尽量收成 **一个** MCP 表面（诚实标注 Implemented / Thin；并非每个适配器都已生产就绪）。
+> **万物都能 MCP** — 本机能力、异构协议、协作套件 → **一个** MCP 表面（诚实标注 Implemented / Thin / leftover；**Apache-2.0**）。
 >
-> **Everything can become MCP** — local caps, heterogeneous protocols, and chat suites → **one** MCP surface (honest **Implemented / Thin / leftover** labels; not every adapter is production-ready).
+> **Everything can become MCP** — local caps, protocols, and chat suites → **one** MCP surface (honest maturity labels; **Apache-2.0**; not every adapter is production-ready).
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Node ≥18.18](https://img.shields.io/badge/node-%E2%89%A518.18-brightgreen.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-140%20suites%20%2F%20570-blue.svg)](docs/AUDIT.md)
+[![Tests](https://img.shields.io/badge/tests-147%20suites%20%2F%20599-blue.svg)](docs/AUDIT.md)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20HTTP%20%7C%20SSE-purple.svg)](docs/ARCHITECTURE.md)
 [![Phase](https://img.shields.io/badge/phase-X%20Partner%20%2B%20Compat-orange.svg)](docs/RELEASE_NOTES.md)
 <!-- Replace with live CI once the public remote is set:
@@ -18,7 +18,7 @@
 
 **不是**官方 MCP 示例里的 [`everything` server](https://github.com/modelcontextprotocol/servers)——那是 SDK 全功能演示；本仓库是独立的「本机能力 + 南向协议 → 一个 MCP 表面」桥。
 
-**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。协议状态诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。测试：`npm test`（约 140 suites / 570）。
+**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。协议状态诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。测试：`npm test`（约 147 suites / 599）。
 
 ## 中文
 
@@ -26,7 +26,7 @@
 
 目标不是「又一个 MCP demo」，而是：**凡是 Agent 够得着的东西，都尽量能变成 MCP tools**——本机 OS / Docker / 文件系统、私网服务、OpenAPI / gRPC / MQTT / 队列 / 工业总线、飞书·钉钉·企微 Partner 入口……统一热注册到同一 MCP server。
 
-诚实边界：协议目录用 **Implemented / Thin / leftover** 标注成熟度（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）。Thin = 可用但收窄（模拟器、编码器或有限操作）。**不声称每一个适配器都已生产就绪。** 许可证：**Apache-2.0**。
+诚实边界：**Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）。Thin = 可用但收窄。**不声称全部生产就绪。** 许可：**Apache-2.0**。
 
 ### 为什么关心
 
@@ -591,7 +591,7 @@ This is **not** the official MCP reference [`everything`](https://github.com/mod
 
 ### One-liner
 
-**Everything can become MCP** — auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly. Licensed **Apache-2.0**.
+**Everything can become MCP** — discover local & platform caps, bridge southbound protocols, Safe/Full gates, console UX, Partner + Feishu/DingTalk/WeCom. **Apache-2.0**.
 
 ### Why it exists
 
@@ -627,7 +627,7 @@ Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopba
 
 Walkthrough + screenshots: [docs/DEMO.md](docs/DEMO.md). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security (locked): [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). License: [Apache-2.0](LICENSE).
 
-**Phase X + Console Redesign is current.** Southbound is not MCP by default. Test baseline **~140 suites / 570 tests**. Next work waits for an explicit continue.
+**Phase X + Console Redesign is current.** Southbound is not MCP by default. Test baseline **~147 suites / 599 tests**. Next work waits for an explicit continue.
 
 ### Docs language layout
 
