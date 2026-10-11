@@ -1,5 +1,12 @@
 # 协议目录与优先级
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Protocol catalog with **Implemented / Thin / leftover** maturity. Thin = usable but narrow (simulator / encoder / limited ops). **Not every adapter is production-ready.** Positioning: **Everything can become MCP**. Full tool matrices follow in Chinese + tables (language-agnostic).
+
+---
 **当前快照：Phase X。** Everything2MCP 用同一套 MCP tool 表面覆盖多种线协议。南向默认不是 MCP（Partner / native / mcp_bridge 兜底）。状态分三档：
 
 - **Implemented** — 可用，有真实客户端路径 + hermetic 测试

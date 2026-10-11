@@ -1,5 +1,12 @@
 # Partner protocol v1
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** Body is English-primary; Chinese summary below.
+
+**中文摘要：** Partner 协议让南向应用 **不必实现 MCP**。Agent 仍只连一个 Everything2MCP。清单 + HTTP invoke；飞书 / 钉钉 / 企微等可走 native。`mcp_bridge` 仅兜底。示例：`examples/partner-demo-chat/`。目标契合 **万物都能 MCP**。
+
+---
 **Phase X.** Southbound apps do **not** implement MCP. The Agent still talks to **one** Everything2MCP over MCP (stdio / Streamable HTTP / SSE). Test baseline: **140 suites / 570 tests** (`npm test`, after the console redesign).
 
 ## Southbound priority (hard)

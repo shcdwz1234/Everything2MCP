@@ -1,5 +1,12 @@
 # Roadmap — 按阶段顺序推进
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Phased roadmap. **Phase X (Partner + Compat + native app adapters) is current.** Southbound is not MCP-by-default. Next phase waits for an explicit continue from the maintainer.
+
+---
 **当前状态：Phase X（Partner 热集成 + Compat Catalog + native 应用适配器）已落地。** 南向不是 MCP-by-default。下一阶段等用户明确 continue。不重开安全决策。
 
 产品目标：把尽可能多的协议变成 MCP tools，并让 Agent **自动发现、建议、一键注册**。  

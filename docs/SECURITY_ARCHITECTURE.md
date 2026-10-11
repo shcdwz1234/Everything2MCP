@@ -1,5 +1,12 @@
 # 安全架构
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Locked security contracts — Safe default, blacklist always on (including Full), `allowWrite=false` by default, actor-bound audience, HMAC integrity, rate limits. Do not reopen these without an explicit project decision. See also [SECURITY.md](../SECURITY.md).
+
+---
 **当前快照：控制台改版。** 黑名单扩展为目标 / 能力实例 / 工具三种粒度（仍在 Full 下生效）；新增控制台私网**自动发现**（L5 修订，见下）；能力可**停用**（保留注册）。热加载走 Policy Gateway。`auto:true` **不能**在 Full / 可写 / Partner `riskCeiling=write|desktop` / 黑名单时自动注册。扫描与 Compat **不**授予 write/desktop/secrets。个人微信私聊不是 Partner 兼容面。
 
 S1 **已落地** Policy Gateway（`src/control/security/`）：`safe`/`full` 热切换、内置模块、Agent `tools/list` 过滤。R4 补了 SHA-256 账本并硬关掉 `ALLOW_SCAN`。S2 补了可选 HMAC、`registrations.json` 入账、审计 JSONL、真限流、`secret-redact` 模块。Phase M 把 audience 绑到 actor。本文仍是实现合同；**S3/S4（外部 JS/npm）有意不做**（v1 builtins only）。不重开 `ALLOW_SCAN` / shim / 全局写；Agent 侧 CIDR 仍永不放行（控制台自动发现见 L5 修订）。

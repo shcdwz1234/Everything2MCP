@@ -1,5 +1,12 @@
 # 体检报告
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Audit / test-coverage report. Phase X landed; per-round subsections are historical snapshots. Run `npm test` (~140 suites / 570) for current baseline.
+
+---
 **当前状态：Phase X（Partner + Compat）已落地。** 下文各「本轮」小节是当时快照。
 
 ## 本轮：Phase X（Partner 热集成）

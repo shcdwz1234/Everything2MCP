@@ -1,5 +1,12 @@
 # Error codes
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** Body is English-primary; Chinese summary below.
+
+**中文摘要：** 适配器与管理工具失败时返回稳定 JSON 错误码（如 `E_UNSUPPORTED`、`E_DENIED`）。下文为英文码表；新增错误请同步更新本页与测试。
+
+---
 Adapter and management tools return a stable JSON payload when a call fails. **Current snapshot: Phase X**（Partner unregister 缺 confirm = `E_INVALID_ARGUMENT`；缺 id = `E_NOT_FOUND`；Partner write/desktop Safe-auto = `E_UNSUPPORTED`；Partner token 错 = `E_AUTH`）。
 
 Adapter and management tools return a stable JSON payload when a call fails:

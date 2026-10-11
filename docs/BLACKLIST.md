@@ -1,5 +1,12 @@
 # 黑名单
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Operator blacklist persists in `dataDir/blacklist.json` (target / capability instance / tool glob). Always enforced, including Full mode. Blocks re-registration; unregister still allowed.
+
+---
 操作员可以把不想再看见、也不想再注册的目标记进黑名单。条目持久化在 **`dataDir/blacklist.json`**，与 `registrations.json` 同级，不是嵌在注册表里。
 
 默认行为：**阻止新建与发现一键添加**；已经挂上的适配器实例**不会卸载**，但 `invoke` 也会被拒绝（更安全）。解除拉黑后可以再注册、再调用。

@@ -1,5 +1,12 @@
 # 发现（Discovery）
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Two paths — console private-range auto-discovery (auto/manual/off) and agent **single-host** probes. Never CIDR from agent tools; never scan link-local / cloud metadata. Candidates are read-only until explicitly enabled.
+
+---
 **当前快照：控制台改版。** 两条路径：
 
 1. **Agent / 单主机发现**（不变）：`discovery_scan_host` 等管理工具只扫**一个** host，有超时、有 SSRF 防护，**拒绝 CIDR / 网段 / 通配符**。Agent 不能借它扫网段。

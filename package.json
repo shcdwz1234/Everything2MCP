@@ -1,7 +1,7 @@
 {
   "name": "everything2mcp",
   "version": "0.1.0",
-  "description": "One MCP for agents: auto-discover local & platform caps, bridge heterogeneous protocols, Safe/Full policy, console UX, Partner ingress (Feishu/DingTalk/WeCom).",
+  "description": "Everything can become MCP / 万物都能 MCP: auto-discover local & platform caps, bridge heterogeneous protocols into one MCP surface. Safe/Full policy, console UX, Partner ingress (Feishu/DingTalk/WeCom).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -53,7 +53,7 @@
     "tailscale",
     "safe-mode"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.8.1",

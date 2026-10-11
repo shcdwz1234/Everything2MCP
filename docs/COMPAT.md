@@ -1,5 +1,12 @@
 # Compat Catalog
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** Body is English-primary; Chinese summary below.
+
+**中文摘要：** Compat Catalog 是 **建议** 面，不是授权。扫描本地 mcpServers / drops，提示可桥接项；不默认提权。基线约 140 suites / 570 tests。
+
+---
 **Phase X.** Compat is a **suggest** surface, not a grant of power. Test baseline: **140 suites / 570 tests** (`npm test`, after the console redesign).
 
 `compat_scan` (and `environment_inventory.compat`) returns structured suggestions with `ingress`. One-click path is the same Lifecycle: `capability_register`.

@@ -1,5 +1,12 @@
 # 架构 — Everything2MCP
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** Single-process five-package layout (transport → control → catalog; control → discovery; catalog → adapters via runtime). Northbound = MCP only. Southbound prefers Partner → native OpenAPI → `mcp_bridge` fallback. Goal: **Everything can become MCP**, with honest Implemented / Thin labels. See also [README](../README.md#english).
+
+---
 **当前快照：Phase X（Partner + Compat）。** 单进程、五包分层。**部署 = 最小 MCP 核心**。北向 MCP only；南向 Partner → native → mcp_bridge 兜底。业务能力全部热加载。MCP 工具名保持 `mcp_*` / `discovery_*` / `capability_*` / `environment_*` / `partner_list` / `compat_scan` / `schema_import` 与 `{protocol}.{name}.{operation}`。
 
 ```

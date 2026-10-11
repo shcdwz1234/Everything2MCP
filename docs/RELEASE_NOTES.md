@@ -1,5 +1,12 @@
 # Everything2MCP 0.1 — 发布说明
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** 0.1 release notes — protocol→MCP bridge + same-process web console. Default stdio MCP; HTTP mounts `/mcp`, `/sse`, `/ui`, `/api`. License: **Apache-2.0**. Chronological CN body below.
+
+---
 从空仓库做到可跑的协议→MCP 桥 + 同进程 Web 控制台。默认 **stdio MCP**；HTTP 时同一进程挂 `/mcp`、`/sse`、`/ui`、`/api`。
 
 **当前快照：控制台改版（在 Phase X 之上）。** 测试全量绿 **`140` suites / `570` tests**（Node 22；Node 20 缺 `node:sqlite`，那部分用例失败，与改版前相同）。部署 = 最小 MCP 核心；能力靠热加载。南向 Partner → native → mcp_bridge 兜底。

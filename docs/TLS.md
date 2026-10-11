@@ -1,5 +1,12 @@
 # TLS / 证书
 
+<!-- bilingual-header:v1 -->
+
+**语言 / Language:** 正文以中文为主；下方为 English summary。
+
+**English summary:** TLS / certificate watch + gRPC remount landed from Phase K; Phase W did not change the TLS contract. Details below (CN-primary).
+
+---
 **当前快照：Phase K 起已落地 watch + gRPC remount；Phase W 未改 TLS 合同。**
 
 适配器在 **connect** 时读证书。`watchTlsMaterial` 对文件路径做 `fs.watch`，变更后 **热重读** 到内存（不重启进程）。删文件 / 读失败记 `lastError`（`E_INVALID_CONFIG`），可测。

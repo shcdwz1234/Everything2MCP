@@ -1,10 +1,12 @@
 # Everything2MCP
 
-> **一个 MCP，接住本机能力与异构协议——自动发现、Safe/Full 闸门、控制台与 Partner 入口。**
->
-> **One MCP for agents: auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly.**
+**语言 / Language:** [中文](#中文) · [English](#english)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+> **万物都能 MCP** — 本机能力、异构协议、协作套件，尽量收成 **一个** MCP 表面（诚实标注 Implemented / Thin；并非每个适配器都已生产就绪）。
+>
+> **Everything can become MCP** — local caps, heterogeneous protocols, and chat suites → **one** MCP surface (honest **Implemented / Thin / leftover** labels; not every adapter is production-ready).
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Node ≥18.18](https://img.shields.io/badge/node-%E2%89%A518.18-brightgreen.svg)](package.json)
 [![Tests](https://img.shields.io/badge/tests-140%20suites%20%2F%20570-blue.svg)](docs/AUDIT.md)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20HTTP%20%7C%20SSE-purple.svg)](docs/ARCHITECTURE.md)
@@ -18,7 +20,15 @@
 
 **当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。协议状态诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。测试：`npm test`（约 140 suites / 570）。
 
-## 为什么关心
+## 中文
+
+### 定位：万物都能 MCP
+
+目标不是「又一个 MCP demo」，而是：**凡是 Agent 够得着的东西，都尽量能变成 MCP tools**——本机 OS / Docker / 文件系统、私网服务、OpenAPI / gRPC / MQTT / 队列 / 工业总线、飞书·钉钉·企微 Partner 入口……统一热注册到同一 MCP server。
+
+诚实边界：协议目录用 **Implemented / Thin / leftover** 标注成熟度（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）。Thin = 可用但收窄（模拟器、编码器或有限操作）。**不声称每一个适配器都已生产就绪。** 许可证：**Apache-2.0**。
+
+### 为什么关心
 
 Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套客户端。Everything2MCP 把它们收成 **一个** MCP server：
 
@@ -32,14 +42,14 @@ Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套�
 
 三步心智模型：`mcp_add` / 发现启用 → 适配器映射 tools → Agent 普通 `tools/call`。无需重启（热注册）。
 
-## 面向谁
+### 面向谁
 
 - **Agent / IDE 用户**（Cursor、Claude Desktop…）——要一个稳定 MCP 入口，而不是 N 个协议客户端
 - **平台与集成开发者**——用 Partner SDK 把应用挂进来，**零 MCP 代码**（见 `examples/partner-demo-chat/`）
 - **安全敏感的自托管场景**——Safe/Full、黑名单、审计、HMAC 完整性、限流
 - **中国协作栈**——飞书 / 钉钉 / 企微 native 路径（模拟器 + `allowWrite` 闸；细节见协议目录）
 
-## 你得到什么
+### 你得到什么
 
 1. **一个 MCP**（stdio 默认；可选 Streamable HTTP `/mcp` + 遗留 SSE）
 2. **自动发现** —— 控制台私网扫描 + Agent 单主机探测；本机/平台能力可热加载
@@ -48,7 +58,7 @@ Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套�
 5. **Partner 入口** —— 南向应用不写 MCP；ingress 徽章：`partner` / `native` / `mcp_bridge`
 6. **诚实协议表** —— Implemented（真实客户端 + 测试）vs Thin（可用但收窄）vs leftover
 
-## Screenshots
+### Screenshots
 
 实机控制台截图（Edge headless → `http://127.0.0.1:8742/ui/`）。本地先 `EVERYTHING2MCP_TRANSPORT=http npm start`。
 
@@ -63,7 +73,7 @@ Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套�
 **3 分钟上手：** [docs/DEMO.md](docs/DEMO.md)
 
 
-## 快速开始
+### 快速开始
 
 克隆本仓库后：
 
@@ -524,6 +534,9 @@ ui/                同进程控制台源；构建进 dist/ui
 
 ## 文档
 
+索引（中英）：[docs/README.md](docs/README.md)。
+
+
 - [3-minute demo](docs/DEMO.md)
 - [架构](docs/ARCHITECTURE.md)
 - [ADR 0001 五包布局](docs/adr/0001-five-package-layout.md)
@@ -565,24 +578,30 @@ ui/                同进程控制台源；构建进 dist/ui
 - `allowShell` / `allowDesktop` 真执行（只有闸与 stub；扫描从不打开）
 - SMB/CIFS 完整 TREE_CONNECT 文件客户端（已有 SMB2 NEGOTIATE + simulator）
 
+
 ## English
 
-**Not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server — this repo is a **local-capability + protocol → MCP** bridge.
+### Positioning: Everything can become MCP
+
+Everything2MCP’s goal is **Everything can become MCP** — turn local capabilities, private-network services, heterogeneous wire protocols, and collaboration suites into **one** hot-reloadable MCP surface for agents.
+
+This is **not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server (that demos the SDK). This repo is a **local-capability + southbound-protocol → MCP** bridge.
+
+**Honesty:** protocols are labeled **Implemented** vs **Thin** vs leftover in [docs/PROTOCOLS.md](docs/PROTOCOLS.md). Thin means usable but intentionally narrow (simulator, encoder, or limited ops). **We do not claim every adapter is production-ready.**
 
 ### One-liner
 
-**One MCP for agents: auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly.**
+**Everything can become MCP** — auto-discover local & platform caps, bridge the protocols you already run, gate with Safe/Full — console UX, Partner ingress, Feishu / DingTalk / WeCom, Tailscale-friendly. Licensed **Apache-2.0**.
 
 ### Why it exists
 
 Agents should not maintain a separate client for every REST API, queue, industrial bus, or chat suite. Everything2MCP is a single-process MCP server that:
 
 - **Discovers** private-network endpoints and local/platform capabilities (console auto / manual / off; agent tools scan **one host only**)
-- **Registers** them as hot-reloadable MCP tools (Shared Policy Gateway for add/remove)
+- **Registers** them as hot-reloadable MCP tools (shared Policy Gateway for add/remove)
 - **Gates** invokes with Safe vs Full, always-on blacklist, default `allowWrite=false`
 - **Exposes** a same-process dark console at `/ui/` plus Streamable HTTP `/mcp` (and legacy SSE)
 - **Prefers** Partner protocol and native OpenAPI adapters (Feishu / DingTalk / WeCom / Slack / Notion / GitHub); `mcp_bridge` is an explicit last resort
-- **Documents honesty** — **Implemented** vs **Thin** vs leftover in [docs/PROTOCOLS.md](docs/PROTOCOLS.md). Thin means usable but intentionally narrow (simulator, encoder, or limited ops). **We do not claim every protocol is production-ready.**
 
 ### Who it is for
 
@@ -606,7 +625,14 @@ $env:EVERYTHING2MCP_TRANSPORT = "http"; $env:EVERYTHING2MCP_HTTP_PORT = "8742"; 
 
 Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopback (including Tailscale). Default bind is `127.0.0.1`.
 
-Walkthrough + screenshots: [docs/DEMO.md](docs/DEMO.md). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security (locked): [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md).
+Walkthrough + screenshots: [docs/DEMO.md](docs/DEMO.md). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security (locked): [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). License: [Apache-2.0](LICENSE).
 
 **Phase X + Console Redesign is current.** Southbound is not MCP by default. Test baseline **~140 suites / 570 tests**. Next work waits for an explicit continue.
 
+### Docs language layout
+
+Index: [docs/README.md](docs/README.md).
+
+
+- Root docs (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `docs/DEMO.md`): **CN then EN sections** in the same file.
+- Longer docs under `docs/`: **CN-primary body** with an **English summary** block at the top (or CN/EN section headers). Paired `*.zh-CN.md` / `*.en.md` only when a doc grows too large to keep dual in one file.
