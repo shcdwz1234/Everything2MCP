@@ -9,7 +9,7 @@
 ---
 同进程管理台：HTTP 监听器在 MCP `/mcp` + SSE `/sse` 之外挂载 **`/ui` SPA** 与 **`/api/*` REST**。业务仍走 `callManagementTool` / `ToolRegistry`，没有第二份 catalog。
 
-**当前快照：控制台改版（Console Redesign）。** 信息架构收敛为 **能力 / 活动 / 设置** 三个一级页，旧页面折叠在侧栏「高级」里。添加能力走按协议 `configSchema` 生成的表单向导（先测试连接再保存）。黑名单支持目标 / 能力实例 / 工具三种粒度。私网自动发现支持 自动 / 手动 / 关闭 三档。改版说明见 [CONSOLE_REDESIGN_REPORT.md](CONSOLE_REDESIGN_REPORT.md)。
+**当前快照：控制台改版（Console Redesign）。** 信息架构收敛为 **能力 / 活动 / 设置** 三个一级页，旧页面折叠在侧栏「高级」里。添加能力走按协议 `configSchema` 生成的表单向导（先测试连接再保存）。黑名单支持目标 / 能力实例 / 工具三种粒度。私网自动发现支持 自动 / 手动 / 关闭 三档。改版细节见下文。
 
 ## 打开
 

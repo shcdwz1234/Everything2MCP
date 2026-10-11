@@ -344,7 +344,7 @@ S1 已完成 list 过滤。R4 已完成轻量文件哈希 + ALLOW_SCAN 硬禁用
 
 **S2 之后仍欠（有意不做，不是漏实现）：** v2/v3 外部模块只留钩子；MCP Agent 写操作 challenge。无密钥时 SHA-256 账本仍可双写伪造（已文档）。gRPC `tlsWatch` 已进程内 remount ChannelCredentials。`tls-material` 热重读已落地。
 
-Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent 漏黑名单工具名；`jwt`/`tlsKey` 脱敏。审查纪要见 [PHASE_M_REVIEW.md](PHASE_M_REVIEW.md)。
+Phase M 补强：audience 绑定 actor；explain/query/health 不再向 Agent 漏黑名单工具名；`jwt`/`tlsKey` 脱敏。审查纪要见 [adr/0002-actor-bound-audience.md](adr/0002-actor-bound-audience.md)。
 
 ### 已锁定（不再待决）
 

@@ -86,11 +86,11 @@
   "author": "shui",
   "repository": {
     "type": "git",
-    "url": "git+http://localhost:8929/shui/xuexi/everything2mcp.git"
+    "url": "git+https://github.com/OWNER/everything2mcp.git"
   },
-  "homepage": "http://localhost:8929/shui/xuexi/everything2mcp",
+  "homepage": "https://github.com/OWNER/everything2mcp#readme",
   "bugs": {
-    "url": "http://localhost:8929/shui/xuexi/everything2mcp/issues"
+    "url": "https://github.com/OWNER/everything2mcp/issues"
   },
   "files": [
     "dist/",

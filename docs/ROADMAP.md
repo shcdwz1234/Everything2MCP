@@ -4,10 +4,10 @@
 
 **语言 / Language:** 正文以中文为主；下方为 English summary。
 
-**English summary:** Phased roadmap. **Phase X (Partner + Compat + native app adapters) is current.** Southbound is not MCP-by-default. Next phase waits for an explicit continue from the maintainer.
+**English summary:** Phased roadmap. **Phase X (Partner + Compat + native app adapters) + console redesign is current.** Southbound is not MCP-by-default. Further work is issue/PR-driven; security non-goals stay closed.
 
 ---
-**当前状态：Phase X（Partner 热集成 + Compat Catalog + native 应用适配器）已落地。** 南向不是 MCP-by-default。下一阶段等用户明确 continue。不重开安全决策。
+**当前状态：Phase X（Partner 热集成 + Compat Catalog + native 应用适配器）已落地。** 南向不是 MCP-by-default。后续工作以 issue / PR 驱动；安全非目标保持关闭。
 
 产品目标：把尽可能多的协议变成 MCP tools，并让 Agent **自动发现、建议、一键注册**。  
 约束（全程有效）：**Agent 工具禁止网段 / CIDR 扫描**（控制台私网自动发现除外，见「控制台改版」）；**SSRF 拦截云 metadata / link-local**；数据面 **默认 `allowWrite=false`（只读）**；**Full 仍执行黑名单**；**Full ≠ 全局写**；无 shim；transport 合同不变。
@@ -190,7 +190,7 @@ P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）�
 - [x] Sparkplug Host STATE 只读订阅 stub（`host_state`；当时不是 Host Application；Host MVP 在 Phase J）
 - [x] 全量 `npm run build && npm test` 绿
 
-当时停在 H、不自动开 I。用户批准后已继续到 **Phase U**。不要把本段读成当前停点。
+当时停在 H；其后已推进到 **Phase U** 乃至当前 Phase X。不要把本段读成当前停点。
 
 ## Phase I — 三大山诚实增量（不是完整产品）
 
@@ -235,7 +235,7 @@ P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）�
 - [x] Agent `audience=console` 伪造无效；REST 强制 `actor.kind=console`
 - [x] `mcp_explain_tool` / query / health 不再向 Agent 漏黑名单工具名或隐藏计数
 - [x] `jwt` / `tlsKey` 脱敏（不泛化 `key`）
-- [x] 设计补充：`docs/PHASE_M_REVIEW.md` + ADR 0002；ARCHITECTURE `schema_import` 不再写成 stub
+- [x] 设计补充：ADR 0002（audience 绑定 actor）；ARCHITECTURE `schema_import` 不再写成 stub
 - [x] 未再试 Kafka 真 EOS / SQL CI Docker / LDAP GSSAPI / v2/v3 / Agent challenge
 
 ## Phase N — 发现加厚 + 新协议 MVP
@@ -354,13 +354,13 @@ P0–P6 与后续 Phase F–U 都是**已完成历史**（下方勾选保留）�
 - [x] S2 UI：能力（当前能力 / 可支持能力 / 黑名单 三 tab + 摘要条）/ 活动 / 设置，旧页收进「高级」；schema 表单向导；能力启用开关（停用保留注册）；PUT 保留脱敏密钥
 - [x] S3 黑名单三种粒度：目标 / 能力实例 / 工具 glob；v1 文件兼容
 - [x] S4 私网自动发现：自动 / 手动 / 关闭；候选、一键启用、需要配置；有界 mDNS / SSDP 组播
-- [x] S5 跨平台构建与测试脚本；去掉重复文档；报告 [CONSOLE_REDESIGN_REPORT.md](CONSOLE_REDESIGN_REPORT.md)
+- [x] S5 跨平台构建与测试脚本；去掉重复文档；细节见 [CONSOLE.md](CONSOLE.md)
 
 **约束放宽（用户批准）：** 「默认网段扫描」与「mDNS 组播浏览」从「明确不会做」移出，改为**只在控制台自动发现里**、按私网规则做（RFC1918 / CGNAT / 本机；网卡 ≤ /24；手动 ≤ /16；每轮主机上限；公网需 `allowPublic`；link-local 与云 metadata 永不扫描；组播 TTL=1 且只收私网应答者）。Agent 工具仍然只接受单主机，`ALLOW_SCAN` 仍是死变量。见 [SECURITY_ARCHITECTURE.md](SECURITY_ARCHITECTURE.md) L5 修订、[DISCOVERY.md](DISCOVERY.md#自动发现auto-discovery)。
 
 ## 当前停点
 
-**Phase X + 控制台改版已落地。** 下一阶段 **pending user continue**。不要自动开下一协议宇宙 / 不要重开 Agent 侧 CIDR、`ALLOW_SCAN`、shim、全局写、Agent challenge、v2/v3 外部插件、部署时 bulk-register。不要把南向默认改成 MCP。
+**Phase X + 控制台改版已落地。** 公开树以本状态为发布基线。后续增强走 issue / PR；不要自动开下一协议宇宙 / 不要重开 Agent 扫 CIDR、`ALLOW_SCAN`、shim、全局写、Agent challenge、v2/v3 外部插件、部署时 bulk-register。不要把南向默认改成 MCP。
 
 ## 明确不会做
 

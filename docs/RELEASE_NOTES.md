@@ -138,7 +138,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 
 - **Audience 绑定 actor**：Agent 不能靠 `mcp_list { audience: "console" }` 看见已拉黑 tools；REST 入口强制 console
 - `mcp_explain_tool` / `mcp_query_by_protocol` / `mcp_health` 对 Agent 藏名；`hiddenBlacklisted` 仅操作员可见
-- 脱敏补 `jwt` / `tlsKey`；审查纪要 `docs/PHASE_M_REVIEW.md`
+- 脱敏补 `jwt` / `tlsKey`；审查纪要 `docs/adr/0002-actor-bound-audience.md`
 
 ### Phase N
 
@@ -275,7 +275,7 @@ EVERYTHING2MCP_TRANSPORT=http EVERYTHING2MCP_HTTP_PORT=8742 npm start
 - **活动页**：调用、策略、启停、能力增删改、黑名单增删、发现运行，密钥脱敏。
 - 新 REST：`/api/protocols*`、`/api/adapters/test`、`/api/adapters/:id/enabled`、`/api/overview`、`/api/activity`、`/api/discovery/settings|status|candidates|run|runs`。
 - 构建 / 测试脚本跨平台（`scripts/copy-assets.mjs`、`scripts/run-tests.mjs`）；删除重复的 `docs/README.md` 与 `docs/compat/catalog.json`。
-- 报告：[CONSOLE_REDESIGN_REPORT.md](CONSOLE_REDESIGN_REPORT.md)。
+- 报告：[CONSOLE.md](CONSOLE.md)。
 
 ## 本版明确没有
 

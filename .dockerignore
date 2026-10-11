@@ -10,6 +10,3 @@ coverage
 .idea
 .vscode
 uploads
-scripts/install-webcodex-thinkbook.sh
-docs/CONSOLE_REDESIGN_REPORT.md
-docs/PHASE_M_REVIEW.md

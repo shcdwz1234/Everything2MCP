@@ -13,7 +13,7 @@
 - **Thin** — 已注册，`listTools`/`invoke` 可用；能力故意收窄（模拟器、编码器或有限操作），文档写明限制
 - **Planned leftover** — 尚未做适配器，或明确跳过（见文末）
 
-`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 核心项已验收；随后 Phase F–V 已落地。stdio 默认，HTTP/SSE 可选，控制台 `/ui`）。部署不批量注册。下一阶段等用户 continue。
+`src/core/` 与 `src/management/` shim **已删除**。入口与测试一律从 `transport` / `control` / `catalog` / `runtime` / `discovery` / `adapters` 导入。阶段勾选见 `docs/ROADMAP.md`（P0–P6 核心项已验收；随后 Phase F–V 已落地。stdio 默认，HTTP/SSE 可选，控制台 `/ui`）。部署不批量注册。后续增强走 issue / PR。
 
 ## 总表（按面分组）
 
@@ -740,7 +740,7 @@ Jira：`myself`/`search`/`get_issue` 只读。
 - SMTP 同 socket 真 TLS 握手（广告/拒绝已测）
 - Mongo aggregation、PromQL 真引擎、CalDAV 完整 iTIP、ZooKeeper ACL/SASL、OPC-UA 完整 Subscription 服务集、SolrCloud admin、k8s watch/CRD/exec
 
-新协议按 `src/adapters/<id>/` 注册即可。下一阶段等用户 continue。
+新协议按 `src/adapters/<id>/` 注册即可。后续增强走 issue / PR。
 
 ## 如何再加一种协议
 
