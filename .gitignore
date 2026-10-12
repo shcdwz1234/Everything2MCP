@@ -9,3 +9,10 @@ uploads/
 coverage/
 .idea/
 .vscode/
+
+# local matrix node binaries
+.node-matrix/
+_test_node*.log
+_gl_*.rb
+
+node_modules.bak_*/
