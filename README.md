@@ -56,6 +56,8 @@ Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套�
 5. **Partner 入口** —— 南向应用不写 MCP；ingress 徽章：`partner` / `native` / `mcp_bridge`
 6. **诚实协议表** —— Implemented（真实客户端 + 测试）vs Thin（可用但收窄）vs leftover
 
+**配置面优势（诚实版）：** 自动扫描本机 / 私网 / 平台能力，热加载进**同一个** MCP 表面——不必为每个功能手写一份 MCP tools 配置。三方对接走 Partner（清单 + HTTP invoke）或 native 适配：对方按协议挂载即可，不必各自实现 / 维护一整套 MCP server；管理台可动态启停。仍可能要在控制台启用候选、设 token / Safe·Full / `allowWrite` / 发现范围；Agent 侧只需配置**这一个** Everything2MCP 入口（stdio 或 HTTP）。
+
 ### Screenshots
 
 实机控制台截图（Edge headless → `http://127.0.0.1:8742/ui/`）。本地先 `EVERYTHING2MCP_TRANSPORT=http npm start`。
@@ -597,6 +599,8 @@ Agents should not maintain a separate client for every REST API, queue, industri
 - **Gates** invokes with Safe vs Full, always-on blacklist, default `allowWrite=false`
 - **Exposes** a same-process dark console at `/ui/` plus Streamable HTTP `/mcp` (and legacy SSE)
 - **Prefers** Partner protocol and native OpenAPI adapters (Feishu / DingTalk / WeCom / Slack / Notion / GitHub); `mcp_bridge` is an explicit last resort
+
+**Config-surface win (honest):** Auto-scan local / private-network / platform capabilities and hot-load them onto **one** MCP surface—no hand-written per-capability MCP tools JSON. Third parties mount via Partner (manifest + HTTP invoke) or native adapters without each shipping a full MCP server; the console can enable/disable dynamically. You may still enable candidates, set token / Safe·Full / `allowWrite` / discovery scopes; the Agent client configures **only this** Everything2MCP entry (stdio or HTTP).
 
 ### Who it is for
 
