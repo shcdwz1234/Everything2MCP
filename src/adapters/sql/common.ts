@@ -23,6 +23,8 @@ export interface RelationalHandle {
   listTables(): Promise<string[]>;
   describe(table: string): Promise<{ table: string; columns: ColumnMeta[] }>;
   close(): Promise<void>;
+  /** Optional backend label for health/diagnostics (node-sqlite | better-sqlite3 | ...). */
+  backend?: string;
 }
 
 export type RelationalConnectFn = (config: Record<string, unknown>) => Promise<RelationalHandle>;
@@ -105,18 +107,29 @@ export function sqliteValues(params: unknown[]): SqliteValue[] {
   });
 }
 
-export async function connectNodeSqlite(config: Record<string, unknown>): Promise<RelationalHandle> {
-  const filename =
-    typeof config.filename === "string" && config.filename.trim()
-      ? config.filename.trim()
-      : typeof config.database === "string" && config.database.trim()
-        ? config.database.trim()
-        : typeof config.path === "string" && config.path.trim()
-          ? config.path.trim()
-          : ":memory:";
+function isMissingNodeSqlite(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const rec = err as { code?: string; message?: string };
+  if (rec.code === "ERR_UNKNOWN_BUILTIN_MODULE") return true;
+  const msg = String(rec.message ?? "");
+  return /No such built-in module:\s*node:sqlite/i.test(msg) || /Cannot find module ['"]node:sqlite['"]/i.test(msg);
+}
+
+function sqliteFilenameFromConfig(config: Record<string, unknown>): string {
+  return (
+    (typeof config.filename === "string" && config.filename.trim()) ||
+    (typeof config.database === "string" && config.database.trim()) ||
+    (typeof config.path === "string" && config.path.trim()) ||
+    ":memory:"
+  );
+}
+
+async function connectBuiltinNodeSqlite(config: Record<string, unknown>): Promise<RelationalHandle> {
+  const filename = sqliteFilenameFromConfig(config);
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(filename);
   return {
+    backend: "node-sqlite",
     async query(sql, params = []) {
       const stmt = db.prepare(sql);
       const bind = sqliteValues(params);
@@ -156,6 +169,32 @@ export async function connectNodeSqlite(config: Record<string, unknown>): Promis
     },
   };
 }
+
+/**
+ * Prefer Node built-in `node:sqlite` (Node >= 22.5). On 18/20 (or builds without it),
+ * fall back to optional `better-sqlite3` so the CI matrix stays green.
+ */
+export async function connectNodeSqlite(config: Record<string, unknown>): Promise<RelationalHandle> {
+  try {
+    return await connectBuiltinNodeSqlite(config);
+  } catch (err) {
+    if (!isMissingNodeSqlite(err)) throw err;
+    try {
+      const { connectBetterSqliteNative } = await import("./native.js");
+      const handle = await connectBetterSqliteNative(config);
+      return { ...handle, backend: handle.backend ?? "better-sqlite3" };
+    } catch (fallbackErr) {
+      throw new AdapterError(
+        "E_UNSUPPORTED",
+        `sqlite needs Node >= 22.5 (built-in node:sqlite) or optional better-sqlite3 (npm i better-sqlite3). Fallback error: ${
+          fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        }`,
+        { protocol: "sqlite" },
+      );
+    }
+  }
+}
+
 
 function quoteIdent(name: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {

@@ -1,0 +1,39 @@
+# Everything2MCP — local GitLab CI (matrix matches .github/workflows/ci.yml)
+# Keep Node 18 / 20 / 22 all green; do not silently drop versions.
+
+stages:
+  - test
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+.default_node:
+  image: node:${NODE_VERSION}-bookworm
+  cache:
+    key: "npm-${NODE_VERSION}"
+    paths:
+      - .npm/
+  before_script:
+    # better-sqlite3 needs a toolchain on Node 18/20 (no built-in node:sqlite)
+    - apt-get update -qq && apt-get install -y -qq python3 make g++ >/dev/null
+    - node -v
+    - npm -v
+    - npm ci
+  script:
+    - npm run build
+    - npm test
+
+test:node18:
+  extends: .default_node
+  variables:
+    NODE_VERSION: "18"
+
+test:node20:
+  extends: .default_node
+  variables:
+    NODE_VERSION: "20"
+
+test:node22:
+  extends: .default_node
+  variables:
+    NODE_VERSION: "22"

@@ -78,7 +78,7 @@ Agent 不该为 REST、MQTT、飞书、本机 Docker、对象存储各接一套�
 克隆本仓库后：
 
 ```bash
-git clone <repo-url> everything2mcp
+git clone https://github.com/shcdwz1234/Everything2MCP.git everything2mcp
 cd everything2mcp
 npm ci          # 或 npm install
 npm run build

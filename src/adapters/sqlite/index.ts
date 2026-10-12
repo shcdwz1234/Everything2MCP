@@ -11,7 +11,7 @@ import {
 } from "../sql/common.js";
 import { connectBetterSqliteNative, wantsNativeDriver } from "../sql/native.js";
 
-/** sqlite — CI default relational engine via `node:sqlite`. */
+/** sqlite — CI default relational engine via `node:sqlite`, with better-sqlite3 fallback on Node 18/20. */
 export class SqliteAdapter implements ProtocolAdapter {
   readonly protocol = "sqlite";
   private handle: RelationalHandle | undefined;
@@ -39,8 +39,8 @@ export class SqliteAdapter implements ProtocolAdapter {
       this.mode = "native";
       this.handle = await connectBetterSqliteNative(config);
     } else {
-      this.mode = "node-sqlite";
       this.handle = await this.connectFn(config);
+      this.mode = this.handle.backend ?? "node-sqlite";
     }
     this.connected = true;
   }

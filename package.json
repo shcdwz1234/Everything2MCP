@@ -59,6 +59,7 @@
     "@grpc/proto-loader": "^0.8.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "amqplib": "^2.0.1",
+    "better-sqlite3": "^11.10.0",
     "coap": "^1.6.0",
     "fast-xml-parser": "^5.2.5",
     "jsmodbus": "^5.0.0",
@@ -86,11 +87,11 @@
   "author": "shui",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/everything2mcp.git"
+    "url": "git+https://github.com/shcdwz1234/Everything2MCP.git"
   },
-  "homepage": "https://github.com/OWNER/everything2mcp#readme",
+  "homepage": "https://github.com/shcdwz1234/Everything2MCP#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/everything2mcp/issues"
+    "url": "https://github.com/shcdwz1234/Everything2MCP/issues"
   },
   "files": [
     "dist/",

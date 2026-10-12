@@ -1,3 +1,4 @@
+import "../runtime/webcrypto-polyfill.js";
 import { AsyncApiAdapter } from "./asyncapi/index.js";
 import { AmqpAdapter } from "./amqp/index.js";
 import { AzureBlobAdapter } from "./azureblob/index.js";

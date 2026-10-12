@@ -4,9 +4,21 @@
 // Extra args are passed through, e.g. `npm test -- --test-name-pattern=blacklist`.
 // Positional args ending in .test.ts replace the default file set.
 import { spawn } from "node:child_process";
+import { webcrypto } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** Node 18: some deps (node-opcua / @peculiar) expect global Crypto. */
+function ensureWebCrypto() {
+  if (typeof globalThis.crypto === "undefined" && webcrypto) {
+    Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true, writable: true });
+  }
+  if (typeof globalThis.Crypto === "undefined" && webcrypto?.constructor) {
+    Object.defineProperty(globalThis, "Crypto", { value: webcrypto.constructor, configurable: true, writable: true });
+  }
+}
+ensureWebCrypto();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./runtime/webcrypto-polyfill.js";
 import { startFromConfig } from "./transport/index.js";
 import { log } from "./runtime/log.js";
 import { APP_NAME, APP_VERSION } from "./runtime/types.js";

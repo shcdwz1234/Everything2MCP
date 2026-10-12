@@ -42,14 +42,25 @@ describe("SQL native optional drivers", () => {
       () => new MysqlAdapter("n").connect({ driver: "native", url: "mysql://127.0.0.1/db" }),
       (err: unknown) => err instanceof AdapterError && err.code === "E_UNSUPPORTED" && /mysql2/.test(err.message),
     );
+    // better-sqlite3 is a hard dependency (Node 18/20 lack node:sqlite). Probe missing via loader.
     await assert.rejects(
-      () => new SqliteAdapter("n").connect({ native: true, filename: ":memory:" }),
+      () => connectBetterSqliteNative({ filename: ":memory:" }, async () => undefined),
       (err: unknown) =>
         err instanceof AdapterError && err.code === "E_UNSUPPORTED" && /better-sqlite3/.test(err.message),
     );
+    // When the package is present, native:true must succeed.
+    const nativeSqlite = new SqliteAdapter("n");
+    await nativeSqlite.connect({ native: true, filename: ":memory:", allowWrite: true });
+    try {
+      const health = await nativeSqlite.health();
+      assert.match(health.detail ?? "", /mode=native/);
+      await nativeSqlite.invoke("execute", { sql: "CREATE TABLE t (id INTEGER)" });
+    } finally {
+      await nativeSqlite.disconnect();
+    }
   });
 
-  it("CI default stays simulator / node:sqlite when native is omitted", async () => {
+  it("CI default stays simulator / node:sqlite (or better-sqlite3 fallback) when native is omitted", async () => {
     const pg = new PostgresAdapter("sim");
     await pg.connect({ simulator: true });
     try {
@@ -62,7 +73,8 @@ describe("SQL native optional drivers", () => {
     await sqlite.connect({ filename: ":memory:" });
     try {
       const health = await sqlite.health();
-      assert.match(health.detail ?? "", /mode=node-sqlite/);
+      // Node >= 22.5 → node-sqlite; Node 18/20 → better-sqlite3 fallback.
+      assert.match(health.detail ?? "", /mode=(node-sqlite|better-sqlite3)/);
     } finally {
       await sqlite.disconnect();
     }

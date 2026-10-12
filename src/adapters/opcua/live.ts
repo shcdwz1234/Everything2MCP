@@ -1,24 +1,59 @@
-import { AttributeIds, DataType, OPCUAClient } from "node-opcua";
 import { AdapterError } from "../../runtime/errors.js";
 import { stringField } from "../helpers.js";
 import type { OpcUaHandle, OpcUaNode } from "./types.js";
 
-function inferDataType(value: unknown): DataType {
-  if (typeof value === "boolean") return DataType.Boolean;
-  if (typeof value === "number") return Number.isInteger(value) ? DataType.Int32 : DataType.Double;
-  if (typeof value === "string") return DataType.String;
-  return DataType.Variant;
+type OpcUaMod = typeof import("node-opcua");
+
+async function loadNodeOpcUa(): Promise<OpcUaMod> {
+  // Ensure Web Crypto exists for older Node (18) before node-opcua / @peculiar stacks load.
+  if (typeof globalThis.Crypto === "undefined") {
+    try {
+      const { webcrypto } = await import("node:crypto");
+      if (webcrypto && typeof webcrypto.getRandomValues === "function") {
+        Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true, writable: true });
+        if (typeof (globalThis as { Crypto?: unknown }).Crypto === "undefined" && webcrypto.constructor) {
+          Object.defineProperty(globalThis, "Crypto", {
+            value: webcrypto.constructor,
+            configurable: true,
+            writable: true,
+          });
+        }
+      }
+    } catch {
+      // ignore — live connect will surface a clearer error
+    }
+  }
+  try {
+    return await import("node-opcua");
+  } catch (err) {
+    throw new AdapterError(
+      "E_UNSUPPORTED",
+      `OPC-UA live client needs node-opcua (Node >= 22.13 recommended). Import failed: ${
+        err instanceof Error ? err.message : String(err)
+      }. Use simulator:true (default) for hermetic CI.`,
+      { protocol: "opcua" },
+    );
+  }
+}
+
+function inferDataType(DataType: OpcUaMod["DataType"], value: unknown): number {
+  if (typeof value === "boolean") return DataType.Boolean as unknown as number;
+  if (typeof value === "number") return (Number.isInteger(value) ? DataType.Int32 : DataType.Double) as unknown as number;
+  if (typeof value === "string") return DataType.String as unknown as number;
+  return DataType.Variant as unknown as number;
 }
 
 /**
  * Real node-opcua client: connect to endpoint URL, create a session, browse/read/write.
  * Used when `simulator: false` and no handle is injected.
+ * Lazy-loads node-opcua so simulator/CI paths never pay the engine/Crypto cost.
  */
 export async function connectNodeOpcUa(config: Record<string, unknown>): Promise<OpcUaHandle> {
   const endpoint = stringField(config, "endpoint") ?? stringField(config, "url");
   if (!endpoint) {
     throw new AdapterError("E_INVALID_CONFIG", "OPC-UA live client requires config.endpoint");
   }
+  const { AttributeIds, DataType, OPCUAClient } = await loadNodeOpcUa();
   const client = OPCUAClient.create({
     endpointMustExist: false,
     requestedSessionTimeout: typeof config.sessionTimeoutMs === "number" ? config.sessionTimeoutMs : 60_000,
@@ -55,7 +90,7 @@ export async function connectNodeOpcUa(config: Record<string, unknown>): Promise
       return {
         nodeId,
         value: dv.value?.value,
-        dataType: DataType[dv.value?.dataType as DataType] ?? String(dv.value?.dataType ?? ""),
+        dataType: (DataType as unknown as Record<number, string>)[dv.value?.dataType as number] ?? String(dv.value?.dataType ?? ""),
         statusCode: status || "Good",
         sourceTimestamp: dv.sourceTimestamp?.toISOString?.() ?? new Date().toISOString(),
         sessionId,
@@ -66,7 +101,7 @@ export async function connectNodeOpcUa(config: Record<string, unknown>): Promise
         nodeId,
         attributeId: AttributeIds.Value,
         value: {
-          value: { dataType: inferDataType(value), value },
+          value: { dataType: inferDataType(DataType, value), value },
         },
       } as never);
       const text = typeof status === "object" && status && "toString" in status ? String(status) : "Good";
@@ -93,7 +128,7 @@ export async function connectNodeOpcUa(config: Record<string, unknown>): Promise
       return {
         nodeId,
         value: dv.value?.value,
-        dataType: DataType[dv.value?.dataType as DataType] ?? String(dv.value?.dataType ?? ""),
+        dataType: (DataType as unknown as Record<number, string>)[dv.value?.dataType as number] ?? String(dv.value?.dataType ?? ""),
         statusCode: status || "Good",
         sourceTimestamp: dv.sourceTimestamp?.toISOString?.() ?? new Date().toISOString(),
         sessionId,
