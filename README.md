@@ -16,9 +16,7 @@
 [![Stars](https://img.shields.io/github/stars/OWNER/everything2mcp?style=social)](../../stargazers)
 -->
 
-**不是**官方 MCP 示例里的 [`everything` server](https://github.com/modelcontextprotocol/servers)——那是 SDK 全功能演示；本仓库是独立的「本机能力 + 南向协议 → 一个 MCP 表面」桥。
-
-**当前快照（Phase X / Partner + Compat）：** 部署 = **最小 MCP 核心**。北向 Agent 只走 MCP；南向默认 **不是 MCP**（Partner 协议 → native OpenAPI 适配器 → `mcp_bridge` 兜底）。能力增长与收缩走共享 **热加载 / 热卸载** 管道。协议状态诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。测试：`npm test`（约 147 suites / 599）。
+Everything2MCP 把本机能力与南向协议收敛成 **一个** MCP 表面，面向 Agent / IDE 用户与集成方。协议成熟度诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。许可：**Apache-2.0**。
 
 ## 中文
 
@@ -584,8 +582,6 @@ ui/                同进程控制台源；构建进 dist/ui
 
 Everything2MCP’s goal is **Everything can become MCP** — turn local capabilities, private-network services, heterogeneous wire protocols, and collaboration suites into **one** hot-reloadable MCP surface for agents.
 
-This is **not** the official MCP reference [`everything`](https://github.com/modelcontextprotocol/servers) server (that demos the SDK). This repo is a **local-capability + southbound-protocol → MCP** bridge.
-
 **Honesty:** protocols are labeled **Implemented** vs **Thin** vs leftover in [docs/PROTOCOLS.md](docs/PROTOCOLS.md). Thin means usable but intentionally narrow (simulator, encoder, or limited ops). **We do not claim every adapter is production-ready.**
 
 ### One-liner
@@ -626,7 +622,7 @@ Set `EVERYTHING2MCP_HTTP_TOKEN` whenever HTTP is reachable beyond trusted loopba
 
 Walkthrough + screenshots: [docs/DEMO.md](docs/DEMO.md). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security (locked): [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). License: [Apache-2.0](LICENSE).
 
-**Phase X + Console Redesign is current.** Southbound is not MCP by default. Test baseline **~147 suites / 599 tests**. Next work waits for an explicit continue.
+Public status: test baseline **~147 suites / 599 tests**; see [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) for the latest snapshot. Southbound protocols are not MCP by default.
 
 ### Docs language layout
 
