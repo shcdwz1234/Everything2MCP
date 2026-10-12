@@ -11,10 +11,8 @@
 [![Tests](https://img.shields.io/badge/tests-147%20suites%20%2F%20599-blue.svg)](docs/AUDIT.md)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20HTTP%20%7C%20SSE-purple.svg)](docs/ARCHITECTURE.md)
 [![Phase](https://img.shields.io/badge/phase-X%20Partner%20%2B%20Compat-orange.svg)](docs/RELEASE_NOTES.md)
-<!-- Replace with live CI once the public remote is set:
-[![CI](https://img.shields.io/github/actions/workflow/status/OWNER/everything2mcp/ci.yml?branch=main)](../../actions)
-[![Stars](https://img.shields.io/github/stars/OWNER/everything2mcp?style=social)](../../stargazers)
--->
+[![CI](https://img.shields.io/github/actions/workflow/status/shcdwz1234/Everything2MCP/ci.yml?branch=main)](https://github.com/shcdwz1234/Everything2MCP/actions/workflows/ci.yml)
+[![Stars](https://img.shields.io/github/stars/shcdwz1234/Everything2MCP?style=social)](https://github.com/shcdwz1234/Everything2MCP/stargazers)
 
 Everything2MCP 把本机能力与南向协议收敛成 **一个** MCP 表面，面向 Agent / IDE 用户与集成方。协议成熟度诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。许可：**Apache-2.0**。
 
