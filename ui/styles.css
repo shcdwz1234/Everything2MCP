@@ -315,3 +315,21 @@ td.actions { display: flex; gap: 6px; align-items: center; justify-content: flex
   .tl-row { grid-template-columns: 16px 1fr; }
 }
 .err-text { color: var(--danger); }
+
+
+/* Language switch (EN / 中文) */
+.lang-switch {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: 8px;
+}
+.lang-switch .lang-btn {
+  min-width: 2.4rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.lang-switch .lang-btn.primary {
+  opacity: 1;
+}
