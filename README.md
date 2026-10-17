@@ -15,6 +15,7 @@
 [![Phase](https://img.shields.io/badge/phase-X%20Partner%20%2B%20Compat-orange.svg)](docs/RELEASE_NOTES.md)
 [![CI](https://img.shields.io/github/actions/workflow/status/shcdwz1234/Everything2MCP/ci.yml?branch=main)](https://github.com/shcdwz1234/Everything2MCP/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/everything2mcp.svg)](https://www.npmjs.com/package/everything2mcp)
+[![shcdwz1234/Everything2MCP MCP server](https://glama.ai/mcp/servers/shcdwz1234/Everything2MCP/badges/score.svg)](https://glama.ai/mcp/servers/shcdwz1234/Everything2MCP)
 [![Stars](https://img.shields.io/github/stars/shcdwz1234/Everything2MCP?style=social)](https://github.com/shcdwz1234/Everything2MCP/stargazers)
 
 Everything2MCP 把本机能力与南向协议收敛成 **一个** MCP 表面，面向 Agent / IDE 用户与集成方。协议成熟度诚实标注 **Implemented / Thin / leftover**（见 [docs/PROTOCOLS.md](docs/PROTOCOLS.md)）——**不声称全部生产就绪**。许可：**Apache-2.0**。
