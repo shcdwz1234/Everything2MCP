@@ -299,6 +299,24 @@ MCP 使用 **stdio**。把 `args` 换成本机仓库里 `dist/index.js` 的绝�
 }
 ```
 
+Claude Desktop 使用同一个 `mcpServers` 结构，但配置文件位置不同：
+
+- **macOS**：`~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**：`%APPDATA%\\Claude\\claude_desktop_config.json`
+
+Claude Desktop 不保证以仓库根为工作目录，所以 `args` 和 `EVERYTHING2MCP_DATA_DIR` 都要写**绝对路径**。可直接复制 `examples/claude-desktop-config.json` 再改成你的路径。
+
+远程 / HTTP 传输时 token 走请求头：设置 `EVERYTHING2MCP_HTTP_TOKEN` 后，客户端必须带 `Authorization: Bearer <token>`（或 `x-api-key`）。默认只绑 `127.0.0.1`，**离开回环（含 Tailscale / 内网）前必须设置 token**。
+
+Windows PowerShell 里设置环境变量（**不要**用 cmd 的 `set`，PowerShell 用 `$env:`）：
+
+```powershell
+$env:EVERYTHING2MCP_TRANSPORT = "http"
+$env:EVERYTHING2MCP_HTTP_PORT = "8742"
+$env:EVERYTHING2MCP_HTTP_TOKEN = "<paste-a-long-random-token>"
+npm start
+```
+
 启动后，Agent 应能看到管理工具：`mcp_list`、`mcp_add`、`mcp_update`、`mcp_remove`、`mcp_query_by_protocol`、`mcp_health`、`mcp_explain_tool`、`mcp_plan_bridge`、`mcp_add_from_discovery`、`schema_import`、`discovery_suggest`、`environment_inventory`、`capability_register` / `capability_unregister` / `capability_configure`、`partner_list`、`compat_scan`，以及可选的 `discovery_probe` / `discovery_scan_host`。黑名单管理工具 `mcp_blacklist_*` 给操作员用，默认不要当业务层。
 
 ## Agent 自主使用

@@ -82,6 +82,8 @@ npm start
 
 相对路径示例：`examples/cursor-mcp.json`。
 
+Claude Desktop 用同一个 `mcpServers` 结构，但配置文件在 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）或 `%APPDATA%\Claude\claude_desktop_config.json`（Windows），`args` 需写绝对路径——见 `examples/claude-desktop-config.json`。
+
 #### Streamable HTTP（与控制台同进程）
 
 保持第 2 步的 HTTP 服务运行：
@@ -177,7 +179,7 @@ Writes stay off by default (`allowWrite=false`, `WRITE-OFF` in the header).
 
 #### stdio (Cursor / Claude Desktop)
 
-After `npm run build`, point `args` at this repo's `dist/index.js` (see Chinese section for JSON). Relative-path example: `examples/cursor-mcp.json`.
+After `npm run build`, point `args` at this repo's `dist/index.js` (see Chinese section for JSON). Relative-path example: `examples/cursor-mcp.json`. Claude Desktop uses the same `mcpServers` shape but its config lives at `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and needs absolute paths — see `examples/claude-desktop-config.json`.
 
 #### Streamable HTTP (same process as the console)
 
