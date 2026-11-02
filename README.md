@@ -254,7 +254,7 @@ Boot **不会**把 os_info / docker / 本机盘点结果写进 catalog。增长�
 
 北向 = MCP only。南向优先级见 [docs/PARTNER.md](docs/PARTNER.md) 与 [docs/COMPAT.md](docs/COMPAT.md)：
 
-1. Partner 协议（应用不写 MCP）。清单 + HTTP invoke。Demo：`examples/partner-demo-chat/`（零 MCP 代码）。
+1. Partner 协议（应用不写 MCP）。清单 + HTTP invoke。Demo：[`examples/partner-demo-chat/`](examples/partner-demo-chat/README.md)（零 MCP 代码，5 分钟上手）。
 2. Native 适配器：`feishu` / `dingtalk` / `wecom` / `slack` / `notion` / `github`（模拟器 + `allowWrite` 闸）。
 3. `mcp_bridge` 兜底导入本地 `mcpServers` JSON（live spawn = `E_UNSUPPORTED`）。
 
